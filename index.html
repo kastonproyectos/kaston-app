@@ -1114,12 +1114,12 @@ function Login({onLogin}) {
   const [shake,setShake] = useState(false);
   const check = e => {
     if(e) e.preventDefault();
-    if(pwd === PASSWORD) { sessionStorage.setItem("kastAuth","1"); onLogin(); }
+    if(pwd === PASSWORD) { localStorage.setItem("kastAuth","1"); onLogin(); }
     else { setError(true); setShake(true); setPwd(""); setTimeout(()=>{ setError(false); setShake(false); },1500); }
   };
   return (
-    <div style={{background:"radial-gradient(ellipse at top,#120e04 0%,#080808 60%)",minHeight:"100svh"}} className="flex items-center justify-center px-6">
-      <div className="w-full max-w-xs fade-in">
+    <div style={{background:"radial-gradient(ellipse at top,#120e04 0%,#080808 60%)",minHeight:"100vh"}} className="flex items-center justify-center px-6">
+      <div className="w-full max-w-xs">
         <div className="text-center mb-12">
           <div className="relative w-28 h-28 mx-auto mb-6 flex items-center justify-center">
             <div style={{background:"radial-gradient(circle,rgba(184,115,51,0.15),transparent 70%)"}} className="absolute inset-0 rounded-full"/>
@@ -1157,7 +1157,7 @@ function Login({onLogin}) {
 }
 
 function App() {
-  const [auth,setAuth] = useState(()=>sessionStorage.getItem("kastAuth")==="1");
+  const [auth,setAuth] = useState(()=>localStorage.getItem("kastAuth")==="1");
   const [tab,setTab] = useState(0);
   const [eqSh,setEqSh] = useState(false);
   const [dbStatus,setDbStatus] = useState("?");
