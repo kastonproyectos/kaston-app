@@ -1109,17 +1109,13 @@ function PagosTab({obras,saveObras,gastos,comisiones}) {
 
 function Login({onLogin}) {
   const [pwd,setPwd] = useState("");
+  const [show,setShow] = useState(false);
   const [error,setError] = useState(false);
   const [shake,setShake] = useState(false);
-  const inputRef = useRef(null);
-  const check = () => {
-    if(pwd === PASSWORD) {
-      sessionStorage.setItem("kastAuth","1");
-      onLogin();
-    } else {
-      setError(true); setShake(true); setPwd("");
-      setTimeout(()=>{ setError(false); setShake(false); inputRef.current?.focus(); },1500);
-    }
+  const check = e => {
+    if(e) e.preventDefault();
+    if(pwd === PASSWORD) { sessionStorage.setItem("kastAuth","1"); onLogin(); }
+    else { setError(true); setShake(true); setPwd(""); setTimeout(()=>{ setError(false); setShake(false); },1500); }
   };
   return (
     <div style={{background:"radial-gradient(ellipse at top,#120e04 0%,#080808 60%)",minHeight:"100svh"}} className="flex items-center justify-center px-6">
@@ -1132,24 +1128,27 @@ function Login({onLogin}) {
           <h1 className="text-white font-black text-4xl mb-2" style={{letterSpacing:"0.2em"}}>KASTON</h1>
           <p className="text-xs font-medium tracking-widest" style={{color:"#B87333",opacity:0.8}}>GESTIÓN PRIVADA</p>
         </div>
-        <div style={{transform:shake?"translateX(-6px)":"none",transition:"transform 0.15s"}}>
-          <input
-            ref={inputRef}
-            type="password"
-            placeholder="Contraseña de acceso"
-            autoComplete="current-password"
-            enterKeyHint="done"
-            className="w-full px-5 py-4 text-white text-base rounded-2xl mb-3"
-            style={{background:"#1a1a1a",border:"1.5px solid rgba(184,115,51,0.3)",outline:"none"}}
-            value={pwd}
-            onChange={e=>setPwd(e.target.value)}
-            onKeyDown={e=>{ if(e.key==="Enter") check(); }}
-          />
+        <form onSubmit={check} style={{transform:shake?"translateX(-6px)":"none",transition:"transform 0.15s"}}>
+          <div className="relative mb-3">
+            <input
+              type={show?"text":"password"}
+              placeholder="Contraseña de acceso"
+              autoComplete="current-password"
+              enterKeyHint="done"
+              style={{background:"#1a1a1a",border:"1.5px solid rgba(184,115,51,0.35)",outline:"none",borderRadius:16,width:"100%",padding:"16px 52px 16px 20px",color:"white",fontSize:16}}
+              value={pwd}
+              onChange={e=>setPwd(e.target.value)}
+            />
+            <button type="button" onClick={()=>setShow(!show)}
+              style={{position:"absolute",right:16,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",padding:4,color:"#6b7280",fontSize:13}}>
+              {show?"Ocultar":"Ver"}
+            </button>
+          </div>
           {error && <p className="text-red-400 text-xs text-center mb-3 fade-in">Contraseña incorrecta</p>}
-          <button onClick={check} className="btn-primary w-full py-4 rounded-2xl font-bold text-white text-base">
+          <button type="submit" className="btn-primary w-full py-4 rounded-2xl font-bold text-white text-base">
             Entrar
           </button>
-        </div>
+        </form>
         <p className="text-center text-xs mt-8" style={{color:"rgba(255,255,255,0.15)"}}>Solo para uso autorizado</p>
       </div>
     </div>
