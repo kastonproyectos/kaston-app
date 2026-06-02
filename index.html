@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+  <meta http-equiv="Pragma" content="no-cache"/>
+  <meta http-equiv="Expires" content="0"/>
+  <meta name="theme-color" content="#080808"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Kaston"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <link rel="manifest" href="/manifest.json"/>
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png"/>
+  <link rel="icon" href="icon-192.png" type="image/png" sizes="192x192"/>
+  <link rel="shortcut icon" href="icon-192.png"/>
+  <title>Kaston</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{orange:{'50':'#fdf6ec','100':'#f9e9cc','200':'#f0d090','300':'#D4A04E','400':'#C08C3A','500':'#B87333','600':'#9A5C2A','700':'#7C4620','800':'#5E3418','900':'#42240F'}}}}}</script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <style>
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+    html{height:100%;overscroll-behavior:none;}
+    body{margin:0;background:#080808;color:white;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;height:100%;overscroll-behavior:none;-webkit-overflow-scrolling:touch;}
+    input,select,textarea{font-family:inherit;font-size:16px !important;}
+    ::placeholder{color:#4b5563;}
+    select option{background:#1a1a1a;}
+    button{cursor:pointer;-webkit-user-select:none;user-select:none;}
+    img{-webkit-user-drag:none;user-drag:none;}
+    .card{background:#161616;border:1px solid rgba(255,255,255,0.09);}
+    .card-hover:active{opacity:0.7;transform:scale(0.985);}
+    .btn-primary{background:linear-gradient(135deg,#C08C3A,#9A5C2A);box-shadow:0 2px 12px rgba(184,115,51,0.25);}
+    .btn-danger{background:#7f1d1d;}
+    .sheet-bg{background:#1c1c1c;}
+    .sheet-handle{width:36px;height:4px;background:rgba(255,255,255,0.12);border-radius:2px;margin:10px auto 0;}
+    .header-bg{background:#050505;border-bottom:1px solid rgba(255,255,255,0.07);}
+    .tab-bar{background:#0d0d0d;border-top:1px solid rgba(255,255,255,0.07);}
+    .input-field{background:#1a1a1a;border:1px solid rgba(255,255,255,0.1);transition:border-color 0.2s;}
+    .input-field:focus{border-color:rgba(184,115,51,0.55);outline:none;}
+    .badge{font-weight:600;letter-spacing:0.02em;}
+    .section-label{font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    .fade-in{animation:fadeIn 0.2s ease}
+    .tab-icon-wrap{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 10px;border-radius:14px;transition:all 0.15s;}
+    .safe-top{padding-top:env(safe-area-inset-top);}
+    .safe-bottom{padding-bottom:env(safe-area-inset-bottom);}
+    /* Touch targets mínimo 44px */
+    .touch-target{min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;}
+    /* Prevenir selección de texto en UI */
+    .no-select{-webkit-user-select:none;user-select:none;}
+    /* Scroll momentum en iOS */
+    .scroll-ios{-webkit-overflow-scrolling:touch;overflow-y:auto;}
+    /* Sheet modal scrollable — compatible con iOS 15+ */
+    .sheet-scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;max-height:80vh;max-height:80svh;padding-bottom:calc(env(safe-area-inset-bottom) + 1.5rem);}
+    /* App container: altura exacta del viewport para que el header no se pierda al hacer scroll */
+    .app-shell{height:100%;overflow:hidden;}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+// ── Base de datos (Supabase REST directo) ─────────────────────
+const SB_URL = "https://rntjainqdzgttikmuxmv.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJudGphaW5xZHpndHRpa211eG12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMzk3OTAsImV4cCI6MjA5NTgxNTc5MH0.7mJoDfKUdRuBDYOgQFujLEW8HQ9Gd5VQNiiAyWKpM54";
+const SB_HEADERS = { "apikey": SB_KEY, "Authorization": "Bearer " + SB_KEY, "Content-Type": "application/json" };
+
+const dbGet = key =>
+  fetch(`${SB_URL}/rest/v1/store?select=value&key=eq.${key}`, { headers: SB_HEADERS })
+    .then(r => r.json()).then(rows => rows[0]?.value || null).catch(() => null);
+
+const dbSet = (key, value) =>
+  fetch(`${SB_URL}/rest/v1/store`, {
+    method: "POST",
+    headers: { ...SB_HEADERS, "Prefer": "resolution=merge-duplicates" },
+    body: JSON.stringify({ key, value })
+  }).then(r => { window._dbOk = r.ok; return r; }).catch(e => { window._dbOk = false; window._dbErr = e.message; });
+
+const dbPing = () =>
+  fetch(`${SB_URL}/rest/v1/store?select=key&limit=1`, { headers: SB_HEADERS })
+    .then(r => r.ok).catch(() => false);
+
+// ── Contraseña ──────────────────────────────────────────────
+const PASSWORD = "Cutifenitalamasbonita";
+
+// ── Utilidades ───────────────────────────────────────────────
+const uid = () => Math.random().toString(36).slice(2,9);
+const fmt = n => new Intl.NumberFormat("es-CO",{style:"currency",currency:"COP",maximumFractionDigits:0}).format(n||0);
+
+function useStore(key, def=[]) {
+  const [data, setData] = useState(() => {
+    try { const c = localStorage.getItem(key); if(c) return JSON.parse(c); } catch {}
+    return def;
+  });
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    (async () => {
+      try {
+        const val = await dbGet(key);
+        if (val) {
+          const parsed = JSON.parse(val);
+          setData(parsed);
+          localStorage.setItem(key, val);
+        }
+      } catch {}
+      setReady(true);
+    })();
+  }, [key]);
+  const save = next => {
+    const d = typeof next === "function" ? next(data) : next;
+    setData(d);
+    const json = JSON.stringify(d);
+    try { localStorage.setItem(key, json); } catch {}
+    dbSet(key, json);
+  };
+  return [data, save, ready];
+}
+
+// ── Constantes ───────────────────────────────────────────────
+const DEF_EQ = ["Juan Guillermo","Hermilson","Juanis"];
+const COTIZADOR_URL = "https://www.kastonproyectos.com/cotizador.html";
+
+const RUTAS = {
+  A:{label:"Ruta A",desc:"Reemplazo por Kaston",color:"bg-blue-700",
+    detalle:"Reemplaza fibrocemento o barro. Si es zinc, derivar a Ruta C (no tiene soporte).",
+    precios:[{tipo:"Todo costo",valor:106623},{tipo:"Solo teja",valor:85000}],
+    recomendados:[],
+    specs:["Reemplazo de cubierta existente (fibrocemento o barro)","No requiere estructura nueva si el soporte esta en buen estado","Zinc: no tiene soporte - derivar a Ruta C"]},
+  B:{label:"Ruta B",desc:"Casa nueva antes del techo",color:"bg-orange-600",
+    detalle:"Casa terminada sin cubierta. Se instala Kaston en lugar del techo tradicional.",
+    precios:[{tipo:"Todo costo",valor:106623},{tipo:"Solo teja",valor:85000}],
+    recomendados:[],
+    specs:["Casa terminada sin cubierta instalada","Instalacion directa sobre estructura existente","Sin demolicion ni retiro de material previo"]},
+  C:{label:"Ruta C",desc:"Proyecto con estructura completa",color:"bg-purple-600",
+    detalle:"Requiere trabajo estructural previo. Aplica con zinc u obras que necesitan mamposteria y estructura nuevas.",
+    precios:[],
+    recomendados:[{nombre:"Hermilson",rol:"Mamposteria y estructura base"},{nombre:"Juan Guillermo",rol:"Estructura de techo (antes de Kaston)"}],
+    specs:["1. Hermilson: mamposteria y obra civil de soporte","2. Juan Guillermo: estructura de techo debajo de las tejas","3. Instalacion de Kaston sobre estructura terminada","Cotizacion por separado: mamposteria + estructura + Kaston"]},
+};
+
+const BC = {
+  Nuevo:"bg-blue-600",Cotizado:"bg-yellow-600",Aprobado:"bg-green-600",Perdido:"bg-red-700",
+  "Por iniciar":"bg-slate-600","En curso":"bg-blue-600",Terminada:"bg-green-600",
+  Pendiente:"bg-slate-600",Listo:"bg-green-600",
+  Visita:"bg-purple-600",Reunion:"bg-blue-600",Entrega:"bg-orange-600",Instalacion:"bg-green-700",Otro:"bg-gray-600",
+};
+
+const Badge = ({s}) => <span className={`badge text-xs px-2.5 py-0.5 rounded-full text-white ${BC[s]||"bg-gray-700"}`}>{s}</span>;
+const ic = "input-field w-full rounded-2xl px-4 py-3 text-white text-sm";
+const Inp = ({label,...p}) => <div className="mb-3"><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>{label}</label><input className={ic} {...p}/></div>;
+const Sel = ({label,opts,...p}) => <div className="mb-3"><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>{label}</label><select className={ic} {...p}>{opts.map(o=><option key={o}>{o}</option>)}</select></div>;
+const Txt = ({label,...p}) => <div className="mb-3"><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>{label}</label><textarea className={ic+" h-20 resize-none"} {...p}/></div>;
+const PBtn = ({danger,...p}) => <button className={`w-full py-3.5 rounded-2xl font-bold text-sm text-white mb-2 active:scale-95 transition-transform ${danger?"btn-danger":"btn-primary"}`} {...p}/>;
+
+function Sheet({open,onClose,title,children}) {
+  return ReactDOM.createPortal(
+    <div className={`fixed inset-0 z-50 ${open?"":"pointer-events-none"}`}>
+      <div onClick={onClose} className={`absolute inset-0 bg-black transition-opacity duration-300 ${open?"opacity-70":"opacity-0"}`}/>
+      <div className={`sheet-bg absolute bottom-0 inset-x-0 rounded-t-3xl transition-transform duration-300 ${open?"translate-y-0":"translate-y-full"}`}>
+        <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-white/10"/></div>
+        <div className="px-5 sheet-scroll">
+          <div className="flex justify-between items-center mb-5 pt-2">
+            <h2 className="text-lg font-bold tracking-tight">{title}</h2>
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 text-lg">×</button>
+          </div>
+          {children}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function Check({checked,onToggle,label,monto}) {
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-gray-700">
+      <div className="flex items-center gap-3">
+        <button onClick={onToggle} className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${checked?"bg-green-600 border-green-600":"border-gray-500"}`}>
+          {checked && <span className="text-white text-xs">✓</span>}
+        </button>
+        <span className={`text-sm ${checked?"line-through text-gray-500":"text-gray-200"}`}>{label}</span>
+      </div>
+      <span className={`text-sm font-semibold ${checked?"text-gray-500":"text-orange-400"}`}>{fmt(monto)}</span>
+    </div>
+  );
+}
+
+function PagoBlock({title,subtitle,data,onChange}) {
+  const total  = parseFloat(data.cotizacion)||0;
+  const pct1   = parseFloat(data.pct1)||0;
+  const pct2   = 100-pct1;
+  const monto1 = total*pct1/100;
+  const monto2 = total*pct2/100;
+  const pend   = total-(data.p1?monto1:0)-(data.p2?monto2:0);
+  return (
+    <div className="card rounded-2xl p-4 mb-3">
+      <p className="text-sm font-bold mb-0.5">{title}</p>
+      <p className="text-xs text-gray-400 mb-3">{subtitle}</p>
+      <Inp label="Cotizacion total (COP)" type="number" value={data.cotizacion} onChange={e=>onChange({...data,cotizacion:e.target.value})} placeholder="0"/>
+      <div className="flex gap-2 mb-3">
+        <div className="flex-1">
+          <label className="block text-xs text-gray-400 mb-1">% al inicio</label>
+          <input type="number" min="0" max="100" className={ic} value={data.pct1} onChange={e=>onChange({...data,pct1:Math.min(100,Math.max(0,parseFloat(e.target.value)||0))})}/>
+        </div>
+        <div className="flex-1">
+          <label className="block text-xs text-gray-400 mb-1">% al final</label>
+          <div className={ic+" bg-gray-700 text-gray-400 flex items-center"}>{pct2}%</div>
+        </div>
+      </div>
+      {total>0 && (
+        <div>
+          <Check checked={data.p1} onToggle={()=>onChange({...data,p1:!data.p1})} label={pct1+"% al inicio"} monto={monto1}/>
+          <Check checked={data.p2} onToggle={()=>onChange({...data,p2:!data.p2})} label={pct2+"% al final"}  monto={monto2}/>
+          <div className="flex justify-between text-xs text-gray-400 pt-2">
+            <span>Pendiente</span>
+            <span className={`font-semibold ${pend>0?"text-orange-300":"text-green-400"}`}>{fmt(pend)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DesgloseSheet({open,onClose,obra,onSave,gastos,saveGas}) {
+  const defD = {
+    jg:     {cotizacion:"",pct1:50,p1:false,p2:false},
+    herm:   {cotizacion:"",pct1:30,p1:false,p2:false},
+    kaston: {cotizacion:"",pct1:50,p1:false,p2:false},
+  };
+  const [d,setD]   = useState(defD);
+  const [mf,setMf] = useState({concepto:"",cantidad:"",valorUnit:""});
+  useEffect(()=>{
+    if(open){
+      const saved = obra?.desgloseC||{};
+      setD({
+        jg:     {...defD.jg,     ...(saved.jg||{})},
+        herm:   {...defD.herm,   ...(saved.herm||{})},
+        kaston: {...defD.kaston, ...(saved.kaston||{})},
+      });
+    }
+  },[open,obra]);
+  const gastosObra = gastos.filter(g=>g.obra===obra?.nombre);
+  const matT = gastosObra.reduce((s,g)=>s+(g.total||0),0);
+  const togglePagado = id => saveGas(gastos.map(g=>g.id===id?{...g,pagado:!g.pagado}:g));
+  const delGasto     = id => saveGas(gastos.filter(g=>g.id!==id));
+  const addGasto = () => {
+    const c=mf.concepto.trim(), cant=parseFloat(mf.cantidad)||0, vu=parseFloat(mf.valorUnit)||0;
+    if(!c||!cant) return;
+    saveGas([{id:uid(),concepto:c,obra:obra?.nombre||"",cantidad:cant,unidad:"und",valorUnit:vu,total:cant*vu,pagado:false,fecha:new Date().toLocaleDateString("es-CO")},...gastos]);
+    setMf({concepto:"",cantidad:"",valorUnit:""});
+  };
+  const pendiente = data => {
+    const t=parseFloat(data.cotizacion)||0;
+    const p1=t*(parseFloat(data.pct1)||0)/100;
+    return t-(data.p1?p1:0)-(data.p2?(t-p1):0);
+  };
+  const jgT   = parseFloat(d.jg.cotizacion)||0;
+  const hermT = parseFloat(d.herm.cotizacion)||0;
+  const kastT = parseFloat(d.kaston.cotizacion)||0;
+  const previewMat = (parseFloat(mf.cantidad)||0)*(parseFloat(mf.valorUnit)||0);
+  const guardar = () => { onSave(d); onClose(); };
+  if(!obra) return null;
+  return (
+    <Sheet open={open} onClose={onClose} title={"Desglose: "+obra.nombre}>
+      <p className="text-xs text-gray-400 mb-4">Ruta C — Seguimiento financiero completo</p>
+      <PagoBlock title="Juan Guillermo" subtitle="Estructura de techo" data={d.jg} onChange={v=>setD({...d,jg:v})}/>
+      <PagoBlock title="Hermilson" subtitle="Mamposteria y estructura base" data={d.herm} onChange={v=>setD({...d,herm:v})}/>
+      <PagoBlock title="Kaston — Cobro al cliente" subtitle="Lo que el cliente nos debe pagar" data={d.kaston} onChange={v=>setD({...d,kaston:v})}/>
+      <div className="card rounded-2xl p-4 mb-3">
+        <p className="text-sm font-bold mb-1">Compras Kaston</p>
+        <p className="text-xs text-gray-400 mb-3">Gastos registrados para esta obra</p>
+        {gastosObra.length===0 && <p className="text-xs text-gray-500 mb-3">Sin gastos registrados para esta obra.</p>}
+        {gastosObra.map(g=>(
+          <div key={g.id} className="flex items-center gap-2 py-2 border-b border-gray-700">
+            <button onClick={()=>togglePagado(g.id)} className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${g.pagado?"bg-green-600 border-green-600":"border-gray-500"}`}>
+              {g.pagado && <span className="text-white text-xs">✓</span>}
+            </button>
+            <div className="flex-1">
+              <p className={`text-sm ${g.pagado?"line-through text-gray-500":"text-gray-200"}`}>{g.concepto}</p>
+              {g.cantidad && <p className="text-xs text-gray-500">{g.cantidad} {g.unidad} × {fmt(g.valorUnit)}</p>}
+            </div>
+            <span className={`text-sm font-semibold whitespace-nowrap ${g.pagado?"text-gray-500":"text-orange-400"}`}>{fmt(g.total)}</span>
+            <button onClick={()=>delGasto(g.id)} className="text-red-400 text-lg ml-1">×</button>
+          </div>
+        ))}
+        <div className="flex justify-between text-sm pt-3 mb-4">
+          <span className="text-gray-300 font-bold">Total compras</span>
+          <span className="text-orange-400 font-bold">{fmt(matT)}</span>
+        </div>
+        <p className="text-xs text-gray-400 mb-2">Agregar compra</p>
+        <input className={ic+" mb-2"} placeholder="Material o concepto" value={mf.concepto} onChange={e=>setMf({...mf,concepto:e.target.value})}/>
+        <div className="flex gap-2 mb-2">
+          <input className={ic+" flex-1"} type="number" placeholder="Cantidad" value={mf.cantidad} onChange={e=>setMf({...mf,cantidad:e.target.value})}/>
+          <input className={ic+" flex-1"} type="number" placeholder="Valor unit" value={mf.valorUnit} onChange={e=>setMf({...mf,valorUnit:e.target.value})}/>
+        </div>
+        {previewMat>0 && <p className="text-orange-400 text-xs mb-2">{fmt(previewMat)}</p>}
+        <button onClick={addGasto} className="w-full py-2 bg-gray-700 rounded-xl text-sm text-white">+ Agregar a gastos</button>
+      </div>
+      <div className="card rounded-2xl p-4 mb-4">
+        <p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Resumen del proyecto</p>
+        <div className="flex justify-between text-sm py-1"><span className="text-gray-400">Juan Guillermo</span><span>{fmt(jgT)}</span></div>
+        <div className="flex justify-between text-sm py-1"><span className="text-gray-400">Hermilson</span><span>{fmt(hermT)}</span></div>
+        <div className="flex justify-between text-sm py-1"><span className="text-gray-400">Compras / materiales</span><span>{fmt(matT)}</span></div>
+        <div className="flex justify-between text-sm py-2 border-t border-gray-700 mt-1">
+          <span className="text-white font-bold">Total egresos</span>
+          <span className="text-orange-400 font-bold">{fmt(jgT+hermT+matT)}</span>
+        </div>
+        <div className="flex justify-between text-sm py-1">
+          <span className="text-gray-400">Pendiente pagar contratistas</span>
+          <span className="text-red-400 font-semibold">{fmt(pendiente(d.jg)+pendiente(d.herm))}</span>
+        </div>
+        <div className="border-t border-gray-700 mt-2 pt-2">
+          <div className="flex justify-between text-sm py-1"><span className="text-gray-400">Cobro Kaston al cliente</span><span>{fmt(kastT)}</span></div>
+          <div className="flex justify-between text-sm py-1">
+            <span className="text-gray-400">Pendiente cobrar</span>
+            <span className={`font-semibold ${pendiente(d.kaston)>0?"text-yellow-400":"text-green-400"}`}>{fmt(pendiente(d.kaston))}</span>
+          </div>
+        </div>
+      </div>
+      <PBtn onClick={guardar}>Guardar desglose</PBtn>
+    </Sheet>
+  );
+}
+
+function ClientesTab({clientes,save,obras}) {
+  const [sh,setSh] = useState(false);
+  const [det,setDet] = useState(null);
+  const blank = {nombre:"",telefono:"",ciudad:"",estado:"Nuevo",notas:""};
+  const [f,setF] = useState(blank);
+  const upd = k => e => setF({...f,[k]:e.target.value});
+  const open = (c=null) => { setDet(c); setF(c||blank); setSh(true); };
+  const guardar = () => {
+    if(!f.nombre.trim()) return;
+    det ? save(clientes.map(c=>c.id===det.id?{...f,id:det.id}:c))
+        : save([{...f,id:uid(),fecha:new Date().toLocaleDateString("es-CO")},...clientes]);
+    setSh(false);
+  };
+  const del = () => { save(clientes.filter(c=>c.id!==det.id)); setSh(false); };
+  return (
+    <div className="p-4">
+      <div className="flex justify-end items-center mb-4">
+        <button onClick={()=>open()} className="btn-primary w-10 h-10 rounded-full flex items-center justify-center font-bold text-xl text-white">+</button>
+      </div>
+      {clientes.length===0 && <p className="text-gray-500 text-center mt-16 text-sm">Sin clientes. Toca + para agregar.</p>}
+      {clientes.map(c=>(
+        <div key={c.id} onClick={()=>open(c)} className="card card-hover rounded-2xl p-4 mb-3 cursor-pointer">
+          <div className="flex justify-between items-start mb-1"><p className="font-semibold flex-1 pr-2">{c.nombre}</p><Badge s={c.estado}/></div>
+          {c.telefono && <p className="text-sm text-gray-400">{c.telefono}</p>}
+          {c.ciudad && <p className="text-xs text-gray-500">{c.ciudad}</p>}
+          {obras.filter(o=>o.cliente===c.nombre).length>0 && <p className="text-xs text-orange-400 mt-1">{obras.filter(o=>o.cliente===c.nombre).length} obra(s)</p>}
+        </div>
+      ))}
+      <Sheet open={sh} onClose={()=>setSh(false)} title={det?"Editar cliente":"Nuevo cliente"}>
+        <Inp label="Nombre *" value={f.nombre} onChange={upd("nombre")} placeholder="Nombre completo"/>
+        <Inp label="Telefono" value={f.telefono} onChange={upd("telefono")} placeholder="300 000 0000" type="tel"/>
+        <Inp label="Ciudad / Barrio" value={f.ciudad} onChange={upd("ciudad")} placeholder="Itagui, Medellin..."/>
+        <Sel label="Estado" opts={["Nuevo","Cotizado","Aprobado","Perdido"]} value={f.estado} onChange={upd("estado")}/>
+        <Txt label="Notas" value={f.notas} onChange={upd("notas")} placeholder="Observaciones..."/>
+        <PBtn onClick={guardar}>{det?"Guardar cambios":"Agregar cliente"}</PBtn>
+        {det && <PBtn danger onClick={del}>Eliminar</PBtn>}
+      </Sheet>
+    </div>
+  );
+}
+
+function ObrasTab({obras,save,clientes,equipo,gastos,saveGas}) {
+  const [sh,setSh] = useState(false);
+  const [det,setDet] = useState(null);
+  const [desgloseSh,setDesgloseSh] = useState(false);
+  const [desgloseObra,setDesgloseObra] = useState(null);
+  const blank = {nombre:"",cliente:"",direccion:"",ruta:"B",precio:"Todo costo",materialActual:"",responsable:equipo[0]||"",estado:"Por iniciar",notas:"",m2:"",montoCobrado:""};
+  const [f,setF] = useState(blank);
+  const upd = k => e => setF({...f,[k]:e.target.value});
+  const open = (o=null) => { setDet(o); setF(o||{...blank,responsable:equipo[0]||""}); setSh(true); };
+  const guardar = () => {
+    if(!f.nombre.trim()) return;
+    det ? save(obras.map(o=>o.id===det.id?{...f,id:det.id}:o))
+        : save([{...f,id:uid(),fecha:new Date().toLocaleDateString("es-CO")},...obras]);
+    setSh(false);
+  };
+  const del = () => { save(obras.filter(o=>o.id!==det.id)); setSh(false); };
+  const openDesglose = (o,e) => { e.stopPropagation(); setDesgloseObra(o); setDesgloseSh(true); };
+  const saveDesglose = dc => { save(obras.map(o=>o.id===desgloseObra.id?{...o,desgloseC:dc}:o)); };
+  const ruta = f.ruta ? RUTAS[f.ruta] : null;
+  const esZinc = f.materialActual?.toLowerCase().includes("zinc");
+  const rutaColor = {A:"bg-blue-700",B:"bg-orange-600",C:"bg-purple-600"};
+  return (
+    <div className="p-4">
+      <div className="flex justify-end items-center mb-4">
+        <button onClick={()=>open()} className="btn-primary w-10 h-10 rounded-full flex items-center justify-center font-bold text-xl text-white">+</button>
+      </div>
+      {obras.length===0 && <p className="text-gray-500 text-center mt-16 text-sm">Sin obras. Toca + para agregar.</p>}
+      {obras.map(o=>{
+        const r = o.ruta ? RUTAS[o.ruta] : null;
+        return (
+          <div key={o.id} onClick={()=>open(o)} className="card card-hover rounded-2xl p-4 mb-3 cursor-pointer">
+            <div className="flex justify-between items-start mb-1">
+              <p className="font-semibold flex-1 pr-2">{o.nombre}</p>
+              <div className="flex gap-1 flex-wrap justify-end">
+                {r && <span className={`text-xs px-2 py-0.5 rounded-full text-white ${rutaColor[o.ruta]}`}>{r.label}</span>}
+                {o.precio && <span className="text-xs px-2 py-0.5 rounded-full text-white bg-gray-600">{o.precio}</span>}
+                <Badge s={o.estado}/>
+              </div>
+            </div>
+            {o.cliente && <p className="text-sm text-gray-400">Cliente: {o.cliente}</p>}
+            {o.direccion && <p className="text-xs text-gray-500">{o.direccion}</p>}
+            {o.materialActual && <p className="text-xs text-gray-500">Material actual: {o.materialActual}</p>}
+            {r && r.recomendados.length>0 && (
+              <div className="mt-2 flex gap-2 flex-wrap">
+                {r.recomendados.map(p=>(
+                  <span key={p.nombre} className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded-lg">{p.nombre} - {p.rol}</span>
+                ))}
+              </div>
+            )}
+            {o.ruta==="C" && (
+              <button onClick={e=>openDesglose(o,e)} className="mt-3 w-full py-2 bg-purple-800 rounded-xl text-xs text-white font-semibold">
+                Ver desglose financiero
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <Sheet open={sh} onClose={()=>setSh(false)} title={det?"Editar obra":"Nueva obra"}>
+        <Inp label="Nombre *" value={f.nombre} onChange={upd("nombre")} placeholder="Ej: Cubierta Casa Garcia"/>
+        <div className="mb-3">
+          <label className="block text-xs text-gray-400 mb-1">Cliente</label>
+          <input list="nomC" className={ic} value={f.cliente} onChange={upd("cliente")} placeholder="Nombre del cliente"/>
+          <datalist id="nomC">{clientes.map(c=><option key={c.id} value={c.nombre}/>)}</datalist>
+        </div>
+        <Inp label="Direccion" value={f.direccion} onChange={upd("direccion")} placeholder="Direccion de la obra"/>
+        <div className="mb-4">
+          <label className="block text-xs text-gray-400 mb-2">Ruta del proyecto</label>
+          <div className="flex gap-2 mb-2">
+            {Object.entries(RUTAS).map(([k,r])=>(
+              <button key={k} onClick={()=>setF({...f,ruta:k,precio:"Todo costo"})}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition ${f.ruta===k?"border-orange-400 "+r.color+" text-white":"border-gray-700 bg-gray-800 text-gray-400"}`}>
+                {k}
+              </button>
+            ))}
+          </div>
+          {ruta && <p className="text-xs text-gray-400">{ruta.detalle}</p>}
+        </div>
+        {f.ruta==="A" && (
+          <div className="mb-3">
+            <Inp label="Material actual a reemplazar" value={f.materialActual} onChange={upd("materialActual")} placeholder="fibrocemento, barro, zinc..."/>
+            {esZinc && (
+              <div className="bg-yellow-900 border border-yellow-600 rounded-xl p-3 -mt-1 mb-2">
+                <p className="text-yellow-300 text-xs font-semibold">Zinc detectado</p>
+                <p className="text-yellow-200 text-xs mt-0.5">El zinc no tiene soporte. Esta obra debe derivarse a Ruta C.</p>
+              </div>
+            )}
+          </div>
+        )}
+        {ruta && ruta.precios.length>0 && (
+          <div className="mb-4">
+            <label className="block text-xs text-gray-400 mb-2">Tipo de cotizacion</label>
+            <div className="flex gap-2">
+              {ruta.precios.map(p=>(
+                <button key={p.tipo} onClick={()=>setF({...f,precio:p.tipo})}
+                  className={`flex-1 py-2 rounded-xl text-xs font-semibold border-2 transition ${f.precio===p.tipo?"border-orange-400 bg-orange-600 text-white":"border-gray-700 bg-gray-800 text-gray-400"}`}>
+                  <p>{p.tipo}</p>
+                  <p className="font-normal opacity-80">{fmt(p.valor)}/m2</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {ruta && (
+          <div className="card rounded-2xl p-4 mb-3">
+            <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Especificaciones {ruta.label}</p>
+            {ruta.specs.map(s=><p key={s} className="text-xs text-gray-300 py-1 border-b border-gray-700 last:border-0">{s}</p>)}
+            {ruta.recomendados.length>0 && (
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wider mt-3 mb-2">Equipo</p>
+                {ruta.recomendados.map(p=>(
+                  <div key={p.nombre} className="flex items-center gap-2 py-1">
+                    <span className="w-2 h-2 rounded-full bg-orange-400 flex-shrink-0"/>
+                    <span className="text-sm text-white font-medium">{p.nombre}</span>
+                    <span className="text-xs text-gray-400">- {p.rol}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="card rounded-2xl p-4 mb-3">
+          <p className="section-label mb-3">Financiero</p>
+          <div className="flex gap-2">
+            <div className="flex-1"><Inp label="Metros cuadrados (m2)" type="number" value={f.m2} onChange={upd("m2")} placeholder="0"/></div>
+            <div className="flex-1"><Inp label="Monto cobrado (COP)" type="number" value={f.montoCobrado} onChange={upd("montoCobrado")} placeholder="0"/></div>
+          </div>
+          {(parseFloat(f.m2)||0)>0 && (()=>{
+            const n=parseFloat(f.m2)||0;
+            const precioM2 = f.precio==="Solo teja"?85000:106623;
+            const venta = n*precioM2;
+            const costo = n*42*1073;
+            const util = venta-costo;
+            return (
+              <div className="border-t border-white/5 pt-3 mt-1">
+                <div className="flex justify-between text-xs py-1"><span className="text-gray-400">Venta estimada</span><span className="text-white">{fmt(venta)}</span></div>
+                <div className="flex justify-between text-xs py-1"><span className="text-gray-400">Costo producción</span><span className="text-orange-400">{fmt(costo)}</span></div>
+                <div className="flex justify-between text-xs py-1 font-bold"><span className="text-gray-300">Utilidad estimada</span><span className="text-green-400">{fmt(util)}</span></div>
+              </div>
+            );
+          })()}
+        </div>
+
+        <Sel label="Responsable principal" opts={equipo.length?equipo:["Sin asignar"]} value={f.responsable} onChange={upd("responsable")}/>
+        <Sel label="Estado" opts={["Por iniciar","En curso","Terminada"]} value={f.estado} onChange={upd("estado")}/>
+        <Txt label="Notas" value={f.notas} onChange={upd("notas")} placeholder="Detalles adicionales..."/>
+        <PBtn onClick={guardar}>{det?"Guardar cambios":"Agregar obra"}</PBtn>
+        {det && <PBtn danger onClick={del}>Eliminar</PBtn>}
+      </Sheet>
+      <DesgloseSheet open={desgloseSh} onClose={()=>setDesgloseSh(false)} obra={desgloseObra} onSave={saveDesglose} gastos={gastos} saveGas={saveGas}/>
+    </div>
+  );
+}
+
+function M2Sheet({open,onClose,obras,onSave}) {
+  const [m2,setM2] = useState("");
+  const [obra,setObra] = useState("");
+  const n = parseFloat(m2)||0;
+  const rollos = Math.ceil(n/41.4);
+  const tejas  = Math.ceil(n*42);
+  const items = [
+    {concepto:"Malla Electrosoldada 4mm",cantidad:rollos,unidad:"rollo",valorUnit:262700,total:rollos*262700},
+    {concepto:"Teja KASTON 8mm (costo fab.)",cantidad:n,  unidad:"m2",   valorUnit:45066, total:n*45066},
+    {concepto:"Mano de obra instalacion",cantidad:n,     unidad:"m2",   valorUnit:15000, total:n*15000},
+  ];
+  const desglose = [
+    {concepto:"Material",   xTeja:600, total:600*42*n},
+    {concepto:"Trabajador", xTeja:270, total:270*42*n},
+    {concepto:"Arriendo",   xTeja:70,  total:70*42*n},
+    {concepto:"Luz",        xTeja:133, total:133*42*n},
+  ];
+  const costoFijo=1073; const ventaTeja=2023;
+  const totalProyecto = items.reduce((s,i)=>s+i.total,0);
+  const guardar = () => {
+    if(!n) return;
+    const fecha = new Date().toLocaleDateString("es-CO");
+    onSave(items.map(i=>({...i,id:uid(),obra,fecha})));
+    setM2(""); setObra(""); onClose();
+  };
+  return (
+    <Sheet open={open} onClose={onClose} title="Materiales por m2">
+      <button onClick={()=>window.open(COTIZADOR_URL,"_blank")} className="w-full mb-4 py-3 rounded-xl border border-orange-500 text-orange-400 text-sm font-semibold flex items-center justify-center gap-2">
+        Abrir cotizador Kaston
+      </button>
+      <div className="mb-3">
+        <label className="block text-xs text-gray-400 mb-1">Obra</label>
+        <input list="nomOT" className={ic} value={obra} onChange={e=>setObra(e.target.value)} placeholder="Nombre de la obra (opcional)"/>
+        <datalist id="nomOT">{obras.map(o=><option key={o.id} value={o.nombre}/>)}</datalist>
+      </div>
+      <Inp label="Metros cuadrados (m2)" type="number" value={m2} onChange={e=>setM2(e.target.value)} placeholder="Ej: 50"/>
+      {n>0 && (
+        <div>
+          <div className="card rounded-2xl p-4 mb-3">
+            <p className="text-xs text-gray-400 mb-3 uppercase tracking-wider">Materiales — {n} m2</p>
+            {items.map(it=>(
+              <div key={it.concepto} className="flex justify-between text-sm py-2 border-b border-gray-700">
+                <div>
+                  <p className="text-gray-200">{it.concepto}</p>
+                  <p className="text-xs text-gray-500">{it.cantidad} {it.unidad} × {fmt(it.valorUnit)}</p>
+                </div>
+                <span className="text-white font-semibold ml-2">{fmt(it.total)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between text-sm pt-3">
+              <span className="text-gray-300 font-bold">Total proyecto</span>
+              <span className="text-orange-400 font-bold">{fmt(totalProyecto)}</span>
+            </div>
+          </div>
+          <div className="card rounded-2xl p-4 mb-4">
+            <p className="text-xs text-gray-400 mb-1 uppercase tracking-wider">Desglose costo teja Kaston</p>
+            <p className="text-xs text-gray-500 mb-3">{tejas} tejas (42 und/m2)</p>
+            {desglose.map(d=>(
+              <div key={d.concepto} className="flex justify-between text-sm py-1.5 border-b border-gray-700">
+                <div>
+                  <span className="text-gray-300">{d.concepto}</span>
+                  <span className="text-gray-500 text-xs ml-2">{fmt(d.xTeja)}/teja</span>
+                </div>
+                <span className="text-white font-medium">{fmt(d.total)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between text-sm py-2 border-b border-gray-600">
+              <span className="text-gray-300 font-semibold">Costo fijo total</span>
+              <div className="text-right">
+                <span className="text-gray-500 text-xs mr-2">{fmt(costoFijo)}/teja</span>
+                <span className="text-orange-400 font-bold">{fmt(costoFijo*tejas)}</span>
+              </div>
+            </div>
+            <div className="flex justify-between text-sm pt-2">
+              <span className="text-gray-300 font-semibold">Venta teja</span>
+              <div className="text-right">
+                <span className="text-gray-500 text-xs mr-2">{fmt(ventaTeja)}/teja</span>
+                <span className="text-green-400 font-bold">{fmt(ventaTeja*tejas)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      <PBtn onClick={guardar} disabled={!n}>Guardar en gastos</PBtn>
+    </Sheet>
+  );
+}
+
+function GastosTab({gastos,save,obras}) {
+  const [sh,setSh] = useState(false);
+  const [m2Sh,setM2Sh] = useState(false);
+  const [det,setDet] = useState(null);
+  const [filtro,setFiltro] = useState("Todas");
+  const blank = {concepto:"",obra:"",cantidad:"",unidad:"und",valorUnit:""};
+  const [f,setF] = useState(blank);
+  const upd = k => e => setF({...f,[k]:e.target.value});
+  const open = (g=null) => { setDet(g); setF(g||blank); setSh(true); };
+  const guardar = () => {
+    if(!f.concepto.trim()) return;
+    const total=(parseFloat(f.cantidad)||0)*(parseFloat(f.valorUnit)||0);
+    det ? save(gastos.map(g=>g.id===det.id?{...f,total,id:det.id}:g))
+        : save([{...f,total,id:uid(),fecha:new Date().toLocaleDateString("es-CO")},...gastos]);
+    setSh(false);
+  };
+  const del = () => { save(gastos.filter(g=>g.id!==det.id)); setSh(false); };
+  const addMany = nuevos => save([...nuevos,...gastos]);
+  const fil = filtro==="Todas"?gastos:gastos.filter(g=>g.obra===filtro);
+  const total = fil.reduce((s,g)=>s+(g.total||0),0);
+  const prev = (parseFloat(f.cantidad)||0)*(parseFloat(f.valorUnit)||0);
+  return (
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-4">
+        
+        <div className="flex gap-2">
+          <button onClick={()=>setM2Sh(true)} className="bg-gray-700 rounded-full px-3 h-10 text-xs text-white">m2</button>
+          <button onClick={()=>open()} className="btn-primary w-10 h-10 rounded-full flex items-center justify-center font-bold text-xl text-white">+</button>
+        </div>
+      </div>
+      <select className={ic+" mb-3"} value={filtro} onChange={e=>setFiltro(e.target.value)}>
+        <option>Todas</option>
+        {obras.map(o=><option key={o.id}>{o.nombre}</option>)}
+      </select>
+      <div className="bg-gray-900 rounded-2xl p-4 mb-4 flex justify-between items-center">
+        <span className="text-gray-400 text-sm">{filtro==="Todas"?"Total general":filtro}</span>
+        <span className="font-bold text-orange-400 text-lg">{fmt(total)}</span>
+      </div>
+      {fil.length===0 && <p className="text-gray-500 text-center mt-8 text-sm">Sin gastos registrados.</p>}
+      {fil.map(g=>(
+        <div key={g.id} onClick={()=>open(g)} className="bg-gray-900 rounded-2xl p-4 mb-3 cursor-pointer active:opacity-70 flex justify-between items-start">
+          <div className="flex-1 pr-2">
+            <p className="font-medium">{g.concepto}</p>
+            {g.obra && <p className="text-xs text-gray-500">{g.obra}</p>}
+            {g.cantidad && <p className="text-xs text-gray-400">{g.cantidad} {g.unidad} × {fmt(g.valorUnit)}</p>}
+          </div>
+          <span className="text-orange-300 font-semibold text-sm whitespace-nowrap">{fmt(g.total)}</span>
+        </div>
+      ))}
+      <Sheet open={sh} onClose={()=>setSh(false)} title={det?"Editar gasto":"Nuevo gasto"}>
+        <Inp label="Concepto *" value={f.concepto} onChange={upd("concepto")} placeholder="Transporte, mano de obra..."/>
+        <div className="mb-3">
+          <label className="block text-xs text-gray-400 mb-1">Obra</label>
+          <input list="nomO" className={ic} value={f.obra} onChange={upd("obra")} placeholder="Nombre de la obra"/>
+          <datalist id="nomO">{obras.map(o=><option key={o.id} value={o.nombre}/>)}</datalist>
+        </div>
+        <div className="flex gap-2">
+          <div className="flex-1"><Inp label="Cantidad" type="number" value={f.cantidad} onChange={upd("cantidad")} placeholder="0"/></div>
+          <div className="w-28"><Sel label="Unidad" opts={["und","m2","kg","m","gl","lb","ml"]} value={f.unidad} onChange={upd("unidad")}/></div>
+        </div>
+        <Inp label="Valor unitario (COP)" type="number" value={f.valorUnit} onChange={upd("valorUnit")} placeholder="0"/>
+        {prev>0 && <p className="text-orange-400 text-sm mb-3 -mt-1">Total: {fmt(prev)}</p>}
+        <PBtn onClick={guardar}>{det?"Guardar cambios":"Agregar gasto"}</PBtn>
+        {det && <PBtn danger onClick={del}>Eliminar</PBtn>}
+      </Sheet>
+      <M2Sheet open={m2Sh} onClose={()=>setM2Sh(false)} obras={obras} onSave={addMany}/>
+    </div>
+  );
+}
+
+function TareasTab({tareas,save,equipo}) {
+  const [sh,setSh] = useState(false);
+  const [det,setDet] = useState(null);
+  const [filtro,setFiltro] = useState("Todas");
+  const blank = {tarea:"",asignado:equipo[0]||"",estado:"Pendiente",notas:""};
+  const [f,setF] = useState(blank);
+  const upd = k => e => setF({...f,[k]:e.target.value});
+  const open = (t=null) => { setDet(t); setF(t||{...blank,asignado:equipo[0]||""}); setSh(true); };
+  const guardar = () => {
+    if(!f.tarea.trim()) return;
+    det ? save(tareas.map(t=>t.id===det.id?{...f,id:det.id}:t))
+        : save([{...f,id:uid(),fecha:new Date().toLocaleDateString("es-CO")},...tareas]);
+    setSh(false);
+  };
+  const del = () => { save(tareas.filter(t=>t.id!==det.id)); setSh(false); };
+  const toggle = (t,e) => {
+    e.stopPropagation();
+    const nx = {Pendiente:"En curso","En curso":"Listo",Listo:"Pendiente"};
+    save(tareas.map(x=>x.id===t.id?{...x,estado:nx[x.estado]}:x));
+  };
+  const fil = filtro==="Todas"?tareas:tareas.filter(t=>t.asignado===filtro);
+  return (
+    <div className="p-4">
+      <div className="flex justify-end items-center mb-4">
+        <button onClick={()=>open()} className="btn-primary w-10 h-10 rounded-full flex items-center justify-center font-bold text-xl text-white">+</button>
+      </div>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {["Todas",...equipo].map(p=>(
+          <button key={p} onClick={()=>setFiltro(p)} className={`text-xs px-3 py-1.5 rounded-full transition ${filtro===p?"bg-orange-500 text-white":"bg-gray-800 text-gray-400"}`}>{p}</button>
+        ))}
+      </div>
+      {fil.length===0 && <p className="text-gray-500 text-center mt-12 text-sm">Sin tareas. Toca + para agregar.</p>}
+      {fil.map(t=>(
+        <div key={t.id} onClick={()=>open(t)} className="bg-gray-900 rounded-2xl p-4 mb-3 flex items-center gap-3 cursor-pointer active:opacity-70">
+          <button onClick={e=>toggle(t,e)} className={`w-7 h-7 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${t.estado==="Listo"?"bg-green-600 border-green-600":t.estado==="En curso"?"border-blue-500":"border-gray-600"}`}>
+            {t.estado==="Listo" && <span className="text-white text-xs">✓</span>}
+            {t.estado==="En curso" && <span className="text-blue-400 text-xs">–</span>}
+          </button>
+          <div className="flex-1">
+            <p className={`font-medium text-sm ${t.estado==="Listo"?"line-through text-gray-500":""}`}>{t.tarea}</p>
+            <p className="text-xs text-gray-400">{t.asignado}</p>
+          </div>
+          <Badge s={t.estado}/>
+        </div>
+      ))}
+      <Sheet open={sh} onClose={()=>setSh(false)} title={det?"Editar tarea":"Nueva tarea"}>
+        <Txt label="Tarea *" value={f.tarea} onChange={upd("tarea")} placeholder="Descripcion..."/>
+        <Sel label="Asignado a" opts={equipo.length?equipo:["Sin asignar"]} value={f.asignado} onChange={upd("asignado")}/>
+        <Sel label="Estado" opts={["Pendiente","En curso","Listo"]} value={f.estado} onChange={upd("estado")}/>
+        <Txt label="Notas" value={f.notas} onChange={upd("notas")} placeholder="Detalles..."/>
+        <PBtn onClick={guardar}>{det?"Guardar cambios":"Agregar tarea"}</PBtn>
+        {det && <PBtn danger onClick={del}>Eliminar</PBtn>}
+      </Sheet>
+    </div>
+  );
+}
+
+function AgendaTab({eventos,save,clientes,obras,equipo}) {
+  const [sh,setSh] = useState(false);
+  const [det,setDet] = useState(null);
+  const todayStr = new Date().toISOString().slice(0,10);
+  const blank = {titulo:"",fecha:todayStr,hora:"09:00",tipo:"Visita",responsable:equipo[0]||"",referencia:"",notas:""};
+  const [f,setF] = useState(blank);
+  const upd = k => e => setF({...f,[k]:e.target.value});
+  const open = (ev=null) => { setDet(ev); setF(ev||{...blank,responsable:equipo[0]||""}); setSh(true); };
+  const guardar = () => {
+    if(!f.titulo.trim()) return;
+    det ? save(eventos.map(e=>e.id===det.id?{...f,id:det.id}:e))
+        : save([{...f,id:uid()},...eventos]);
+    setSh(false);
+  };
+  const del = () => { save(eventos.filter(e=>e.id!==det.id)); setSh(false); };
+  const refs = [...clientes.map(c=>c.nombre),...obras.map(o=>o.nombre)];
+  const sorted = [...eventos].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const proximos = sorted.filter(e=>e.fecha>=todayStr);
+  const pasados  = [...sorted.filter(e=>e.fecha<todayStr)].reverse();
+  const meses = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  const fmtF = str => { const[y,m,d]=str.split("-"); return `${parseInt(d)} ${meses[parseInt(m)-1]} ${y}`; };
+  const diff = str => {
+    const h=new Date(); h.setHours(0,0,0,0);
+    const d=Math.round((new Date(str+"T00:00:00")-h)/86400000);
+    if(d===0) return "Hoy"; if(d===1) return "Mañana";
+    if(d>0) return `En ${d} días`; return `Hace ${Math.abs(d)} días`;
+  };
+  const Card = ({ev,past=false}) => (
+    <div onClick={()=>open(ev)} className={`bg-gray-900 rounded-2xl p-4 mb-3 cursor-pointer active:opacity-70 ${past?"opacity-50":""}`}>
+      <div className="flex justify-between items-start mb-1"><p className="font-semibold flex-1 pr-2 text-sm">{ev.titulo}</p><Badge s={ev.tipo}/></div>
+      <p className="text-xs text-gray-400">{fmtF(ev.fecha)}{ev.hora&&" - "+ev.hora}</p>
+      {ev.responsable && <p className="text-xs text-orange-300 mt-0.5">{ev.responsable}</p>}
+      {ev.referencia && <p className="text-xs text-gray-500 mt-0.5">{ev.referencia}</p>}
+      {!past && <p className={`text-xs mt-1 font-medium ${ev.fecha===todayStr?"text-orange-400":"text-gray-500"}`}>{diff(ev.fecha)}</p>}
+    </div>
+  );
+  return (
+    <div className="p-4">
+      <div className="flex justify-end items-center mb-4">
+        <button onClick={()=>open()} className="btn-primary w-10 h-10 rounded-full flex items-center justify-center font-bold text-xl text-white">+</button>
+      </div>
+      {eventos.length===0 && <p className="text-gray-500 text-center mt-16 text-sm">Sin eventos. Toca + para agendar.</p>}
+      {proximos.length>0 && <div><p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Próximos</p>{proximos.map(ev=><Card key={ev.id} ev={ev}/>)}</div>}
+      {pasados.length>0 && <div><p className="text-xs text-gray-400 uppercase tracking-wider mb-3 mt-5">Pasados</p>{pasados.map(ev=><Card key={ev.id} ev={ev} past/>)}</div>}
+      <Sheet open={sh} onClose={()=>setSh(false)} title={det?"Editar evento":"Nuevo evento"}>
+        <Inp label="Titulo *" value={f.titulo} onChange={upd("titulo")} placeholder="Ej: Visita obra Garcia"/>
+        <Sel label="Tipo" opts={["Visita","Reunion","Entrega","Instalacion","Otro"]} value={f.tipo} onChange={upd("tipo")}/>
+        <div className="flex gap-2">
+          <div className="flex-1"><Inp label="Fecha" type="date" value={f.fecha} onChange={upd("fecha")}/></div>
+          <div className="w-32"><Inp label="Hora" type="time" value={f.hora} onChange={upd("hora")}/></div>
+        </div>
+        <Sel label="Responsable" opts={equipo.length?equipo:["Sin asignar"]} value={f.responsable} onChange={upd("responsable")}/>
+        <div className="mb-3">
+          <label className="block text-xs text-gray-400 mb-1">Cliente u obra relacionada</label>
+          <input list="refs" className={ic} value={f.referencia} onChange={upd("referencia")} placeholder="Opcional"/>
+          <datalist id="refs">{refs.map(n=><option key={n} value={n}/>)}</datalist>
+        </div>
+        <Txt label="Notas" value={f.notas} onChange={upd("notas")} placeholder="Detalles del evento..."/>
+        <PBtn onClick={guardar}>{det?"Guardar cambios":"Agendar"}</PBtn>
+        {det && <PBtn danger onClick={del}>Eliminar</PBtn>}
+      </Sheet>
+    </div>
+  );
+}
+
+function exportarExcel(clientes,obras,gastos,tareas,eventos,comisiones) {
+  const COSTO_M2 = 42*1073;
+  const precioM2 = o => o.precio==="Solo teja"?85000:106623;
+  const wb = window.XLSX.utils.book_new();
+
+  // Clientes
+  const wsC = window.XLSX.utils.json_to_sheet(clientes.map(c=>({
+    Nombre:c.nombre||"", Teléfono:c.telefono||"", Ciudad:c.ciudad||"",
+    Estado:c.estado||"", Notas:c.notas||"", Fecha:c.fecha||""
+  })));
+  window.XLSX.utils.book_append_sheet(wb, wsC, "Clientes");
+
+  // Obras
+  const wsO = window.XLSX.utils.json_to_sheet(obras.map(o=>{
+    const m2=parseFloat(o.m2)||0;
+    const venta=m2*precioM2(o), costo=m2*COSTO_M2;
+    return {
+      Nombre:o.nombre||"", Cliente:o.cliente||"", Dirección:o.direccion||"",
+      Ruta:o.ruta||"", Precio:o.precio||"", "M2":m2||"",
+      "Venta estimada":venta||"", "Costo producción":costo||"",
+      "Utilidad estimada":venta-costo||"", "Monto cobrado":parseFloat(o.montoCobrado)||0,
+      "Material actual":o.materialActual||"", Responsable:o.responsable||"",
+      Estado:o.estado||"", Notas:o.notas||"", Fecha:o.fecha||""
+    };
+  }));
+  window.XLSX.utils.book_append_sheet(wb, wsO, "Obras");
+
+  // Gastos
+  const wsG = window.XLSX.utils.json_to_sheet(gastos.map(g=>({
+    Concepto:g.concepto||"", Obra:g.obra||"", Cantidad:g.cantidad||"",
+    Unidad:g.unidad||"", "Valor unitario":g.valorUnit||"",
+    Total:g.total||0, Pagado:g.pagado?"Sí":"No", Fecha:g.fecha||""
+  })));
+  window.XLSX.utils.book_append_sheet(wb, wsG, "Gastos");
+
+  // Tareas
+  const wsT = window.XLSX.utils.json_to_sheet(tareas.map(t=>({
+    Tarea:t.tarea||"", Asignado:t.asignado||"",
+    Estado:t.estado||"", Notas:t.notas||"", Fecha:t.fecha||""
+  })));
+  window.XLSX.utils.book_append_sheet(wb, wsT, "Tareas");
+
+  // Agenda
+  const wsA = window.XLSX.utils.json_to_sheet(eventos.map(e=>({
+    Título:e.titulo||"", Tipo:e.tipo||"", Fecha:e.fecha||"",
+    Hora:e.hora||"", Responsable:e.responsable||"",
+    Referencia:e.referencia||"", Notas:e.notas||""
+  })));
+  window.XLSX.utils.book_append_sheet(wb, wsA, "Agenda");
+
+  // Comisiones
+  const wsCom = window.XLSX.utils.json_to_sheet(
+    Object.entries(comisiones).map(([nombre,pct])=>({Contratista:nombre,"Comisión %":pct}))
+  );
+  window.XLSX.utils.book_append_sheet(wb, wsCom, "Comisiones");
+
+  const fecha = new Date().toLocaleDateString("es-CO").replace(/\//g,"-");
+  window.XLSX.writeFile(wb, `Kaston_${fecha}.xlsx`);
+}
+
+function EquipoSheet({open,onClose,equipo,save,comisiones,saveComisiones,clientes,obras,gastos,tareas,eventos}) {
+  const [nuevo,setNuevo] = useState("");
+  const agregar = () => { const n=nuevo.trim(); if(!n||equipo.includes(n)) return; save([...equipo,n]); setNuevo(""); };
+  const setCom = (nombre,val) => saveComisiones({...comisiones,[nombre]:parseFloat(val)||0});
+  return (
+    <Sheet open={open} onClose={onClose} title="Equipo Kaston">
+      <p className="text-xs text-gray-400 mb-1">Responsables y su % de comisión para Kaston.</p>
+      <p className="text-xs text-gray-500 mb-4">El cliente les paga a ellos directamente. El % es lo que te deben a ti.</p>
+      <div className="mb-4">
+        {equipo.map(e=>(
+          <div key={e} className="card rounded-2xl px-4 py-3 mb-2 flex items-center gap-3">
+            <span className="text-sm flex-1">{e}</span>
+            <div className="flex items-center gap-1">
+              <input type="number" min="0" max="100" placeholder="0"
+                className="w-16 bg-black/30 rounded-xl px-3 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
+                value={comisiones[e]||""} onChange={ev=>setCom(e,ev.target.value)}/>
+              <span className="text-gray-400 text-sm">%</span>
+            </div>
+            <button onClick={()=>save(equipo.filter(x=>x!==e))} className="text-red-400 text-xl leading-none pl-2">×</button>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input className={ic+" flex-1"} value={nuevo} onChange={e=>setNuevo(e.target.value)} placeholder="Nombre del responsable" onKeyDown={e=>{if(e.key==="Enter")agregar();}}/>
+        <button onClick={agregar} className="btn-primary rounded-xl px-5 text-white font-bold text-xl">+</button>
+      </div>
+
+      <div className="mt-6 pt-5 border-t border-white/5">
+        <p className="section-label mb-3">Exportar datos</p>
+        <button onClick={()=>exportarExcel(clientes,obras,gastos,tareas,eventos,comisiones)}
+          className="w-full py-3.5 rounded-2xl font-bold text-sm text-white flex items-center justify-center gap-2"
+          style={{background:"linear-gradient(135deg,#166534,#15803d)"}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+          </svg>
+          Exportar todo a Excel
+        </button>
+        <p className="text-xs text-gray-500 text-center mt-2">Descarga un .xlsx con clientes, obras, gastos, tareas y agenda</p>
+      </div>
+    </Sheet>
+  );
+}
+
+function PagosTab({obras,saveObras,gastos,comisiones}) {
+  const COSTO_M2 = 42*1073;  // $45,066 — costo producción por m2 (material+trabajador+arriendo+luz)
+
+  const precioM2 = o => o.precio==="Solo teja"?85000:106623;
+
+  // Cálculo por obra
+  const infoObra = o => {
+    const m2 = parseFloat(o.m2)||0;
+    const venta = m2*precioM2(o);
+    const costoProduccion = m2*COSTO_M2;
+    const cobrado = parseFloat(o.montoCobrado)||0;
+    const pendienteCobrar = Math.max(0,venta-cobrado);
+    const utilidad = cobrado - costoProduccion;
+    return {m2,venta,costoProduccion,cobrado,pendienteCobrar,utilidad};
+  };
+
+  const comPct = nombre => (parseFloat(comisiones[nombre])||0)/100;
+  const comObra = (o,quien) => {
+    const dc=o.desgloseC; const key=quien==="jg"?"jg":"herm";
+    const nombre=quien==="jg"?"Juan Guillermo":"Hermilson";
+    const total=parseFloat(dc?.[key]?.cotizacion)||0;
+    const monto=total*comPct(nombre);
+    const cobrada=dc?.[key]?.comRecibida||false;
+    return {total,monto,cobrada,nombre};
+  };
+  const toggleCom = (o,key) => {
+    const dc={...(o.desgloseC||{})};
+    dc[key]={...(dc[key]||{}),comRecibida:!dc[key]?.comRecibida};
+    saveObras(obras.map(ob=>ob.id===o.id?{...ob,desgloseC:dc}:ob));
+  };
+  const toggleCobrado = o => {
+    const info=infoObra(o);
+    const nuevo = o.montoCobrado?0:info.venta;
+    saveObras(obras.map(ob=>ob.id===o.id?{...ob,montoCobrado:nuevo}:ob));
+  };
+
+  // Totales globales
+  const obrasConM2 = obras.filter(o=>parseFloat(o.m2)>0);
+  let totalVenta=0,totalCobrado=0,totalCosto=0,totalPendiente=0;
+  obrasConM2.forEach(o=>{
+    const inf=infoObra(o);
+    totalVenta+=inf.venta; totalCobrado+=inf.cobrado;
+    totalCosto+=inf.costoProduccion; totalPendiente+=inf.pendienteCobrar;
+  });
+  const totalUtilidad = totalCobrado - totalCosto;
+
+  const obrasC = obras.filter(o=>o.ruta==="C"&&o.desgloseC);
+  let comCobrada=0,comPendiente=0;
+  obrasC.forEach(o=>{
+    const cjg=comObra(o,"jg"),ch=comObra(o,"herm");
+    comCobrada+=(cjg.cobrada?cjg.monto:0)+(ch.cobrada?ch.monto:0);
+    comPendiente+=(!cjg.cobrada&&cjg.monto>0?cjg.monto:0)+(!ch.cobrada&&ch.monto>0?ch.monto:0);
+  });
+
+  const gastosPagados    = gastos.filter(g=>g.pagado).reduce((s,g)=>s+(g.total||0),0);
+  const gastosPendientes = gastos.filter(g=>!g.pagado).reduce((s,g)=>s+(g.total||0),0);
+  const libre = totalCobrado + comCobrada - gastosPagados;
+
+  return (
+    <div className="p-4">
+      <div className="mb-5"/>
+
+      {/* Balance general */}
+      <div className="card rounded-2xl p-4 mb-4">
+        <p className="section-label mb-3">Balance general</p>
+        <div className="flex justify-between text-sm py-1.5 border-b border-white/5">
+          <span className="text-gray-300">Cobrado a clientes</span>
+          <span className="text-green-400 font-semibold">{fmt(totalCobrado)}</span>
+        </div>
+        <div className="flex justify-between text-sm py-1.5 border-b border-white/5">
+          <span className="text-gray-300">Comisiones cobradas</span>
+          <span className="text-green-400 font-semibold">{fmt(comCobrada)}</span>
+        </div>
+        <div className="flex justify-between text-sm py-1.5 border-b border-white/5">
+          <span className="text-gray-300">Costo producción tejas</span>
+          <span className="text-orange-400">{fmt(totalCosto)}</span>
+        </div>
+        <div className="flex justify-between text-sm py-1.5 border-b border-white/5">
+          <span className="text-gray-300">Otros gastos pagados</span>
+          <span className="text-red-400">{fmt(gastosPagados)}</span>
+        </div>
+        <div className="flex justify-between text-base font-bold pt-3 mt-1">
+          <span>Libre / disponible</span>
+          <span className={libre>=0?"text-green-400":"text-red-400"}>{fmt(libre)}</span>
+        </div>
+      </div>
+
+      {/* Por obra — cobros y utilidad */}
+      <div className="card rounded-2xl p-4 mb-3">
+        <p className="text-sm font-bold mb-1">Por obra</p>
+        <p className="text-xs text-gray-500 mb-3">Costo producción = $45.066/m2 · Marca ✓ cuando el cliente pague todo</p>
+        {obrasConM2.length===0 && <p className="text-xs text-gray-500">Agrega m2 a tus obras para ver el análisis.</p>}
+        {obrasConM2.map(o=>{
+          const inf=infoObra(o);
+          const pagadoTotal = inf.cobrado>=inf.venta&&inf.venta>0;
+          return (
+            <div key={o.id} className="mb-4 pb-3 border-b border-white/5 last:border-0">
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1">
+                  <p className="text-sm font-semibold">{o.nombre}</p>
+                  <p className="text-xs text-gray-500">{inf.m2} m2 · {o.precio}</p>
+                </div>
+                <button onClick={()=>toggleCobrado(o)}
+                  className={`ml-3 flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition ${pagadoTotal?"bg-green-700/30 text-green-400":"bg-white/5 text-gray-400"}`}>
+                  <span className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${pagadoTotal?"bg-green-500 border-green-500":"border-gray-500"}`}/>
+                  {pagadoTotal?"Pagado":"Sin cobrar"}
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-black/20 rounded-xl p-2">
+                  <p className="text-[9px] text-gray-500 uppercase tracking-wide mb-1">Venta</p>
+                  <p className="text-xs font-bold text-white">{fmt(inf.venta)}</p>
+                </div>
+                <div className="bg-black/20 rounded-xl p-2">
+                  <p className="text-[9px] text-gray-500 uppercase tracking-wide mb-1">Costo prod.</p>
+                  <p className="text-xs font-bold text-orange-400">{fmt(inf.costoProduccion)}</p>
+                </div>
+                <div className="bg-black/20 rounded-xl p-2">
+                  <p className="text-[9px] text-gray-500 uppercase tracking-wide mb-1">Utilidad</p>
+                  <p className={`text-xs font-bold ${inf.utilidad>=0?"text-green-400":"text-red-400"}`}>{fmt(inf.utilidad)}</p>
+                </div>
+              </div>
+              {inf.pendienteCobrar>0 && (
+                <p className="text-xs text-yellow-400 mt-2">Pendiente de cobrar: {fmt(inf.pendienteCobrar)}</p>
+              )}
+            </div>
+          );
+        })}
+        {obrasConM2.length>1 && (
+          <div className="flex justify-between text-sm pt-2 border-t border-white/5">
+            <span className="text-gray-400 font-semibold">Utilidad total</span>
+            <span className={`font-bold ${totalUtilidad>=0?"text-green-400":"text-red-400"}`}>{fmt(totalUtilidad)}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Comisiones contratistas */}
+      {obrasC.length>0 && (
+        <div className="card rounded-2xl p-4 mb-3">
+          <p className="text-sm font-bold mb-1">Comisiones de contratistas</p>
+          <p className="text-xs text-gray-500 mb-3">El cliente les paga a ellos. Marca cuando te paguen a ti.</p>
+          {obrasC.map(o=>{
+            const cjg=comObra(o,"jg"),ch=comObra(o,"herm");
+            if(!cjg.monto&&!ch.monto) return null;
+            return (
+              <div key={o.id} className="mb-3 pb-3 border-b border-white/5 last:border-0">
+                <p className="text-xs text-gray-400 font-semibold mb-2">{o.nombre}</p>
+                {cjg.monto>0&&(
+                  <div className="flex items-center gap-3 py-1.5">
+                    <button onClick={()=>toggleCom(o,"jg")} className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 ${cjg.cobrada?"bg-green-600 border-green-600":"border-gray-500"}`}>
+                      {cjg.cobrada&&<span className="text-white text-xs">✓</span>}
+                    </button>
+                    <span className={`text-sm flex-1 ${cjg.cobrada?"line-through text-gray-500":""}`}>Juan Guillermo</span>
+                    <div className="text-right">
+                      <p className={`text-sm font-semibold ${cjg.cobrada?"text-gray-500":"text-orange-400"}`}>{fmt(cjg.monto)}</p>
+                      <p className="text-xs text-gray-600">{Math.round(comPct("Juan Guillermo")*100)}% de {fmt(cjg.total)}</p>
+                    </div>
+                  </div>
+                )}
+                {ch.monto>0&&(
+                  <div className="flex items-center gap-3 py-1.5">
+                    <button onClick={()=>toggleCom(o,"herm")} className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 ${ch.cobrada?"bg-green-600 border-green-600":"border-gray-500"}`}>
+                      {ch.cobrada&&<span className="text-white text-xs">✓</span>}
+                    </button>
+                    <span className={`text-sm flex-1 ${ch.cobrada?"line-through text-gray-500":""}`}>Hermilson</span>
+                    <div className="text-right">
+                      <p className={`text-sm font-semibold ${ch.cobrada?"text-gray-500":"text-orange-400"}`}>{fmt(ch.monto)}</p>
+                      <p className="text-xs text-gray-600">{Math.round(comPct("Hermilson")*100)}% de {fmt(ch.total)}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <div className="flex justify-between text-sm pt-2 border-t border-white/5">
+            <span className="text-gray-400 font-semibold">Pendiente cobrar</span>
+            <span className="text-orange-400 font-bold">{fmt(comPendiente)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Gastos pendientes */}
+      {gastosPendientes>0 && (
+        <div className="card rounded-2xl p-4 mb-3">
+          <p className="text-sm font-bold mb-3">Falta por comprar / pagar</p>
+          {gastos.filter(g=>!g.pagado).map(g=>(
+            <div key={g.id} className="flex justify-between text-sm py-1.5 border-b border-white/5">
+              <div>
+                <p className="text-gray-300">{g.concepto}</p>
+                {g.obra&&<p className="text-xs text-gray-600">{g.obra}</p>}
+              </div>
+              <span className="text-red-400 font-medium ml-3">{fmt(g.total)}</span>
+            </div>
+          ))}
+          <div className="flex justify-between text-sm pt-3 font-bold">
+            <span className="text-gray-400">Total pendiente</span>
+            <span className="text-red-400">{fmt(gastosPendientes)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Login({onLogin}) {
+  const [pwd,setPwd] = useState("");
+  const [error,setError] = useState(false);
+  const [shake,setShake] = useState(false);
+  const check = () => {
+    if(pwd === PASSWORD) {
+      sessionStorage.setItem("kastAuth","1");
+      onLogin();
+    } else {
+      setError(true); setShake(true); setPwd("");
+      setTimeout(()=>{ setError(false); setShake(false); },1500);
+    }
+  };
+  return (
+    <div style={{background:"radial-gradient(ellipse at top,#120e04 0%,#080808 60%)"}} className="min-h-screen flex items-center justify-center px-6">
+      <div className="w-full max-w-xs fade-in">
+        <div className="text-center mb-12">
+          <div className="relative w-28 h-28 mx-auto mb-6 flex items-center justify-center">
+            <div style={{background:"radial-gradient(circle,rgba(184,115,51,0.15),transparent 70%)"}} className="absolute inset-0 rounded-full"/>
+            <img src="logo.svg" alt="Kaston" style={{width:96,height:96,objectFit:"contain"}}/>
+          </div>
+          <h1 className="text-white font-black text-4xl mb-2" style={{letterSpacing:"0.2em"}}>KASTON</h1>
+          <p className="text-xs font-medium tracking-widest" style={{color:"#B87333",opacity:0.8}}>GESTIÓN PRIVADA</p>
+        </div>
+        <div style={{transform:shake?"translateX(-6px)":"none",transition:"transform 0.15s"}}>
+          <div className="card rounded-2xl p-1 mb-3">
+            <input type="password" placeholder="Contraseña de acceso"
+              style={{background:"transparent",border:"none"}}
+              className="w-full px-5 py-4 text-white text-base outline-none placeholder-gray-600"
+              value={pwd} onChange={e=>setPwd(e.target.value)}
+              onKeyDown={e=>{ if(e.key==="Enter") check(); }} autoFocus/>
+          </div>
+          {error && <p className="text-red-400 text-xs text-center mb-3 fade-in">Contraseña incorrecta</p>}
+          <button onClick={check} className="btn-primary w-full py-4 rounded-2xl font-bold text-white text-base">
+            Entrar
+          </button>
+        </div>
+        <p className="text-center text-xs mt-8" style={{color:"rgba(255,255,255,0.15)"}}>Solo para uso autorizado</p>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [auth,setAuth] = useState(()=>sessionStorage.getItem("kastAuth")==="1");
+  const [tab,setTab] = useState(0);
+  const [eqSh,setEqSh] = useState(false);
+  const [dbStatus,setDbStatus] = useState("?");
+  const [clientes,saveCli,rC]       = useStore("kaston_clientes");
+  const [obras,saveObr,rO]          = useStore("kaston_obras");
+  const [gastos,saveGas,rG]         = useStore("kaston_gastos");
+  const [tareas,saveTar,rT]         = useStore("kaston_tareas");
+  const [eventos,saveEv,rE]         = useStore("kaston_eventos");
+  const [equipo,saveEq,rEq]         = useStore("kaston_equipo",DEF_EQ);
+  const [comisiones,saveCom,rCom]   = useStore("kaston_comisiones",{});
+  useEffect(()=>{ if(rEq&&equipo.length===0) saveEq(DEF_EQ); },[rEq]);
+  useEffect(()=>{ if(auth) dbPing().then(ok=>setDbStatus(ok?"✓":"✗")); },[auth]);
+
+  if(!auth) return <Login onLogin={()=>setAuth(true)}/>;
+
+  if(!rC||!rO||!rG||!rT||!rE||!rEq||!rCom) return (
+    <div style={{background:"#080808"}} className="min-h-screen flex items-center justify-center text-white">
+      <div className="text-center">
+        <div className="btn-primary w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-black mx-auto mb-4">K</div>
+        <p className="text-sm tracking-widest" style={{color:"rgba(255,255,255,0.4)"}}>CARGANDO</p>
+      </div>
+    </div>
+  );
+
+  const todayStr = new Date().toISOString().slice(0,10);
+  const pending  = tareas.filter(t=>t.estado!=="Listo").length;
+  const hoyEv    = eventos.filter(e=>e.fecha===todayStr).length;
+  const TabIcons = [
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>,
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M3 10h18M5 21V7l7-4 7 4v14"/><rect x="9" y="13" width="6" height="8" rx="1"/></svg>,
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/><path d="M9 12h3"/></svg>,
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>,
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>,
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>,
+  ];
+  const TABS = [
+    {label:"Clientes"},
+    {label:"Obras"},
+    {label:"Gastos"},
+    {label:"Tareas",badge:pending},
+    {label:"Agenda",badge:hoyEv},
+    {label:"Pagos"},
+  ];
+
+  return (
+    <div style={{background:"#080808",maxWidth:480,margin:"0 auto"}} className="app-shell text-white flex flex-col">
+      <div className="header-bg px-4 pb-3 flex items-center gap-3" style={{paddingTop:"max(env(safe-area-inset-top), 12px)"}}>
+        <div className="flex items-center gap-2.5 flex-1">
+          <img src="logo.svg" alt="Kaston" style={{height:34,width:"auto",objectFit:"contain"}}/>
+          <div>
+            <div className="text-white font-black" style={{fontSize:16,letterSpacing:"0.16em",lineHeight:1.2}}>KASTON</div>
+            <div style={{fontSize:10,color:"#B87333",opacity:0.75,letterSpacing:"0.04em",marginTop:2}}>
+              {["Clientes","Obras","Gastos","Tareas","Agenda","Pagos"][tab]}
+            </div>
+          </div>
+        </div>
+        <span title={dbStatus==="✓"?"En línea":"Sin conexión"} style={{width:7,height:7,borderRadius:"50%",background:dbStatus==="✓"?"#22c55e":dbStatus==="✗"?"#ef4444":"#555",display:"inline-block",flexShrink:0}}/>
+        <button onClick={()=>setEqSh(true)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{background:"rgba(255,255,255,0.06)"}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
+
+      <div className="flex-1 scroll-ios pb-24 fade-in">
+        {tab===0 && <ClientesTab clientes={clientes} save={saveCli} obras={obras}/>}
+        {tab===1 && <ObrasTab obras={obras} save={saveObr} clientes={clientes} equipo={equipo} gastos={gastos} saveGas={saveGas}/>}
+        {tab===2 && <GastosTab gastos={gastos} save={saveGas} obras={obras}/>}
+        {tab===3 && <TareasTab tareas={tareas} save={saveTar} equipo={equipo}/>}
+        {tab===4 && <AgendaTab eventos={eventos} save={saveEv} clientes={clientes} obras={obras} equipo={equipo}/>}
+        {tab===5 && <PagosTab obras={obras} saveObras={saveObr} gastos={gastos} comisiones={comisiones}/>}
+      </div>
+
+      <div className="tab-bar safe-bottom fixed bottom-0 flex no-select" style={{maxWidth:480,left:"50%",transform:"translateX(-50%)",width:"100%"}}>
+        {TABS.map(({label,badge},i)=>(
+          <button key={i} onClick={()=>setTab(i)} className="flex-1 py-2 flex flex-col items-center relative transition-all">
+            <div className="tab-icon-wrap" style={{color:tab===i?"#B87333":"#4b5563",background:tab===i?"rgba(184,115,51,0.12)":"transparent"}}>
+              {TabIcons[i]}
+              <span style={{fontSize:8,fontWeight:700,letterSpacing:"0.05em",opacity:tab===i?1:0,height:tab===i?10:0,overflow:"hidden",transition:"all 0.15s",textTransform:"uppercase"}}>{label}</span>
+            </div>
+            {badge>0 && <span className="absolute top-1.5 right-1/4 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold" style={{background:"#B87333",fontSize:9}}>{badge}</span>}
+          </button>
+        ))}
+      </div>
+      <EquipoSheet open={eqSh} onClose={()=>setEqSh(false)} equipo={equipo} save={saveEq} comisiones={comisiones} saveComisiones={saveCom} clientes={clientes} obras={obras} gastos={gastos} tareas={tareas} eventos={eventos}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
