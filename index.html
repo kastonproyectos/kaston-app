@@ -57,9 +57,8 @@
     /* Scroll momentum en iOS */
     .scroll-ios{-webkit-overflow-scrolling:touch;overflow-y:auto;}
     /* Sheet modal scrollable — compatible con iOS 15+ */
-    .sheet-scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:calc(80vh - var(--kb-h,0px));max-height:calc(80dvh - var(--kb-h,0px));padding-bottom:calc(env(safe-area-inset-bottom) + 1.5rem);}
-    /* App container: altura exacta del viewport para que el header no se pierda al hacer scroll */
-    .app-shell{height:100%;overflow:hidden;}
+    .sheet-scroll{overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:85vh;padding-bottom:calc(env(safe-area-inset-bottom) + 100px);}
+    .app-shell{height:100%;}
   </style>
 </head>
 <body>
@@ -160,7 +159,7 @@ const Txt = ({label,...p}) => <div className="mb-3"><label style={{fontSize:11,c
 const PBtn = ({danger,...p}) => <button className={`w-full py-3.5 rounded-2xl font-bold text-sm text-white mb-2 active:scale-95 transition-transform ${danger?"btn-danger":"btn-primary"}`} {...p}/>;
 
 function Sheet({open,onClose,title,children}) {
-  return ReactDOM.createPortal(
+  return (
     <div className={`fixed inset-0 z-50 ${open?"":"pointer-events-none"}`}>
       <div onClick={onClose} className={`absolute inset-0 bg-black transition-opacity duration-300 ${open?"opacity-70":"opacity-0"}`}/>
       <div className={`sheet-bg absolute bottom-0 inset-x-0 rounded-t-3xl transition-transform duration-300 ${open?"translate-y-0":"translate-y-full"}`}>
@@ -173,8 +172,7 @@ function Sheet({open,onClose,title,children}) {
           {children}
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
 }
 
