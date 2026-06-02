@@ -1190,27 +1190,6 @@ function App() {
   useEffect(()=>{ if(rEq&&equipo.length===0) saveEq(DEF_EQ); },[rEq]);
   useEffect(()=>{ if(auth) dbPing().then(ok=>setDbStatus(ok?"✓":"✗")); },[auth]);
 
-  // Scroll campo enfocado por encima del teclado en iOS PWA
-  useEffect(()=>{
-    const onFocus = e => {
-      const el = e.target;
-      if(!['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) return;
-      setTimeout(()=>{ el.scrollIntoView({block:'center',behavior:'smooth'}); }, 400);
-    };
-    document.addEventListener('focusin', onFocus, true);
-    // visualViewport: ajustar sheet cuando abre el teclado
-    const vv = window.visualViewport;
-    const onVVResize = () => {
-      const off = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      document.documentElement.style.setProperty('--kb-h', off + 'px');
-    };
-    if(vv) { vv.addEventListener('resize', onVVResize); onVVResize(); }
-    return ()=>{
-      document.removeEventListener('focusin', onFocus, true);
-      if(vv) vv.removeEventListener('resize', onVVResize);
-    };
-  },[]);
-
   if(!auth) return <Login onLogin={()=>setAuth(true)}/>;
 
   if(!rC||!rO||!rG||!rT||!rE||!rEq||!rCom) return (
