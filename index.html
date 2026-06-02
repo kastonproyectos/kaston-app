@@ -87,8 +87,8 @@ const dbPing = () =>
   fetch(`${SB_URL}/rest/v1/store?select=key&limit=1`, { headers: SB_HEADERS })
     .then(r => r.ok).catch(() => false);
 
-// ── Contraseña ──────────────────────────────────────────────
-const PASSWORD = "Cutifenitalamasbonita";
+// ── PIN de acceso ────────────────────────────────────────────
+const PIN_CODE = "2025";
 
 // ── Utilidades ───────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2,9);
@@ -1108,29 +1108,70 @@ function PagosTab({obras,saveObras,gastos,comisiones}) {
 }
 
 function Login({onLogin}) {
-  const [error,setError] = useState(false);
-  const check = () => {
-    const v = window.prompt("Contraseña de acceso Kaston:");
-    if(v===null) return;
-    if(v===PASSWORD){ localStorage.setItem("kastAuth","1"); onLogin(); }
-    else { setError(true); setTimeout(()=>setError(false),2500); }
+  const [digits,setDigits] = useState("");
+  const [shake,setShake] = useState(false);
+
+  const tap = d => {
+    if(digits.length >= PIN_CODE.length) return;
+    const next = digits + d;
+    setDigits(next);
+    if(next.length === PIN_CODE.length) {
+      if(next === PIN_CODE) {
+        localStorage.setItem("kastAuth","1");
+        setTimeout(onLogin, 180);
+      } else {
+        setShake(true);
+        setTimeout(()=>{ setDigits(""); setShake(false); }, 700);
+      }
+    }
   };
+
+  const del = () => setDigits(d => d.slice(0,-1));
+
+  const keys = [1,2,3,4,5,6,7,8,9,null,0,"⌫"];
+
   return (
-    <div style={{background:"radial-gradient(ellipse at top,#120e04 0%,#080808 60%)",minHeight:"100vh"}} className="flex items-center justify-center px-6">
-      <div className="w-full max-w-xs">
-        <div className="text-center mb-16">
-          <div className="relative w-32 h-32 mx-auto mb-6 flex items-center justify-center">
-            <div style={{background:"radial-gradient(circle,rgba(184,115,51,0.15),transparent 70%)"}} className="absolute inset-0 rounded-full"/>
-            <img src="logo.svg" alt="Kaston" style={{width:108,height:108,objectFit:"contain"}}/>
+    <div style={{background:"radial-gradient(ellipse at top,#120e04 0%,#080808 60%)",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px"}}>
+      <div style={{width:"100%",maxWidth:320}}>
+        <div style={{textAlign:"center",marginBottom:40}}>
+          <div style={{position:"relative",width:96,height:96,margin:"0 auto 16px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <div style={{position:"absolute",inset:0,borderRadius:"50%",background:"radial-gradient(circle,rgba(184,115,51,0.15),transparent 70%)"}}/>
+            <img src="logo.svg" alt="Kaston" style={{width:80,height:80,objectFit:"contain"}}/>
           </div>
-          <h1 className="text-white font-black text-4xl mb-2" style={{letterSpacing:"0.2em"}}>KASTON</h1>
-          <p className="text-xs font-medium tracking-widest" style={{color:"#B87333",opacity:0.8}}>GESTIÓN PRIVADA</p>
+          <h1 style={{color:"white",fontWeight:900,fontSize:30,letterSpacing:"0.18em",margin:"0 0 6px"}}>KASTON</h1>
+          <p style={{color:"#B87333",fontSize:10,fontWeight:600,letterSpacing:"0.1em",opacity:0.8,margin:0}}>GESTIÓN PRIVADA</p>
         </div>
-        {error && <p className="text-red-400 text-sm text-center mb-4">Contraseña incorrecta. Intenta de nuevo.</p>}
-        <button onClick={check} className="btn-primary w-full py-4 rounded-2xl font-bold text-white text-base">
-          Entrar
-        </button>
-        <p className="text-center text-xs mt-6" style={{color:"rgba(255,255,255,0.15)"}}>Solo para uso autorizado</p>
+
+        {/* Puntos indicadores */}
+        <div style={{display:"flex",justifyContent:"center",gap:16,marginBottom:36,transform:shake?"translateX(-8px)":"none",transition:"transform 0.07s"}}>
+          {[0,1,2,3].map(i=>(
+            <div key={i} style={{width:14,height:14,borderRadius:"50%",border:"2px solid #B87333",background:digits.length>i?"#B87333":"transparent",transition:"background 0.15s"}}/>
+          ))}
+        </div>
+
+        {/* Teclado numérico */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+          {keys.map((k,i)=>(
+            <button key={i} onClick={()=>k===null?null:k==="⌫"?del():tap(String(k))}
+              style={{
+                padding:"18px 0",borderRadius:18,
+                background:k===null?"transparent":"#1c1c1c",
+                border:k===null?"none":"1px solid rgba(255,255,255,0.08)",
+                color:k==="⌫"?"#9ca3af":"white",
+                fontSize:k==="⌫"?20:22,
+                fontWeight:600,
+                cursor:k===null?"default":"pointer",
+                WebkitTapHighlightColor:"transparent",
+                transition:"background 0.1s",
+                userSelect:"none"
+              }}
+              onTouchStart={e=>{ if(k!==null) e.currentTarget.style.background=k==="⌫"?"#2a2a2a":"#2a2a2a"; }}
+              onTouchEnd={e=>{ if(k!==null) e.currentTarget.style.background=k===null?"transparent":"#1c1c1c"; }}
+            >{k===null?"":k}</button>
+          ))}
+        </div>
+
+        <p style={{textAlign:"center",fontSize:11,color:"rgba(255,255,255,0.12)",marginTop:28}}>Solo para uso autorizado</p>
       </div>
     </div>
   );
