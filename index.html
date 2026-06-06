@@ -547,7 +547,7 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
                       <div className="flex-1 bg-black/20 rounded-xl p-3">
                         <p className="text-[9px] text-gray-500 uppercase mb-1.5">% Anticipo Inicial</p>
                         <div className="flex items-center gap-1">
-                          <input type="number" min="0" max="100"
+                          <input type="number" min="0" max="100" step="5"
                             className="w-14 bg-gray-800 border border-gray-700 rounded-xl px-2 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
                             value={o[ct.campoAntPct]!==undefined&&o[ct.campoAntPct]!==""?o[ct.campoAntPct]:ct.pctAnticipo}
                             onChange={e=>upd({[ct.campoAntPct]:e.target.value})}/>
@@ -1137,7 +1137,7 @@ function ConfigSheet({open,onClose,config,saveConfig,obras,clientes}){
               <p className="text-[10px] text-gray-600">{sub}</p>
             </div>
             <div className="flex items-center gap-1">
-              <input type="number" min="0" max="100"
+              <input type="number" min="0" max="100" step="5"
                 className="w-16 bg-black/30 rounded-xl px-2 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
                 value={cfg[k]||""} onChange={e=>setCfg(k,e.target.value)}/>
               <span className="text-gray-400 text-sm">%</span>
