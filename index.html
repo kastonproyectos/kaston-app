@@ -93,12 +93,29 @@ function useStore(key,def=[]){
 }
 
 // ── Lógica financiera ─────────────────────────────────────────
-// Detecta el tipo de contrato compatible con versiones anteriores
+// Rutas: A=Reemplazo cubierta, B=Solo suministro estructura, C=Adecuación desde cero
+const RUTAS={
+  A:{label:"Ruta A",desc:"Reemplazo de cubierta",sub:"Barro / Fibrocemento → KASTON",color:"bg-blue-700"},
+  B:{label:"Ruta B",desc:"Solo suministro estructura",sub:"Base ya construida, sin contratistas externos",color:"bg-orange-600"},
+  C:{label:"Ruta C",desc:"Adecuación estructural completa",sub:"Desde cero (ej: zinc). Activa JG + Hermilson",color:"bg-purple-600"},
+};
+const getRuta=o=>o.ruta||"A";
+
+// Determina si se muestran tarjetas de contratistas
+function mostrarContratistas(o){
+  const r=getRuta(o);
+  if(r==="C") return true;
+  if(r==="A"&&o.requiereEstructural) return true;
+  return false; // Ruta B nunca; Ruta A sin switch = nunca
+}
+
+// Tipo de contrato compatible con versiones anteriores
 function getTipo(o){
-  if(o.tipoContrato==="Todo Costo") return "Todo Costo";
-  if(o.tipoContrato==="Solo Teja")  return "Solo Teja";
-  if(o.precio==="Todo costo")       return "Todo Costo";
-  return "Solo Teja";
+  if(o.tipoContrato==="Todo Costo")           return "Todo Costo";
+  if(o.tipoContrato==="Únicamente La Teja")   return "Únicamente La Teja";
+  if(o.tipoContrato==="Solo Teja")            return "Únicamente La Teja"; // compat v1
+  if(o.precio==="Todo costo")                 return "Todo Costo";
+  return "Únicamente La Teja";
 }
 
 function getPrecioM2(o,cfg){
@@ -305,6 +322,7 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
 
       <div className="flex items-center gap-2 mb-5 flex-wrap">
         <Badge s={o.estado||"Por iniciar"}/>
+        {(()=>{const r=RUTAS[getRuta(o)];return r&&<span className={`text-xs px-2 py-0.5 rounded-full text-white font-semibold ${r.color}`}>{r.label}</span>;})()}
         <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{tipo}</span>
         {m2>0&&<span className="text-xs text-gray-500">{m2} m² · {tejasTotales.toLocaleString()} tejas</span>}
       </div>
@@ -449,47 +467,76 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
       {/* ══ C — CONTRATISTAS ══════════════════════════ */}
       <p className="section-label mb-2">C — Contratistas</p>
 
-      {/* Juan Guillermo */}
-      <div className="card rounded-2xl p-4 mb-3">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"/>
-          <p className="font-bold text-sm">Juan Guillermo</p>
-          <span className="text-xs text-gray-500">— Cubierta de madera</span>
+      {/* Ruta B: sin contratistas externos */}
+      {getRuta(o)==="B"&&(
+        <div className="card rounded-2xl p-4 mb-5 flex items-center gap-3">
+          <span className="text-2xl">🏗️</span>
+          <div>
+            <p className="text-sm font-semibold text-gray-200">Sin contratistas externos</p>
+            <p className="text-xs text-gray-500">Ruta B — La base ya está construida. KASTON instala directamente.</p>
+          </div>
         </div>
-        <Inp label="Valor acordado cliente → Juan Guillermo (COP)" type="number"
-          value={o.pagoJG||""} onChange={e=>upd({pagoJG:e.target.value})} placeholder="0"/>
-        {pagoJG>0&&(
-          <>
-            <div className="flex justify-between text-sm py-1 border-t border-white/5 mt-1">
-              <span className="text-gray-400">Comisión Kaston ({cfg.pctComisionJG}%)</span>
-              <span className="text-orange-400 font-bold">{fmt(comJG)}</span>
-            </div>
-            <AlertaCom nombre="Juan Guillermo" monto={comJG} recibida={o.comJGRecibida||false}
-              onMarcar={()=>upd({comJGRecibida:true})} onRevertir={()=>upd({comJGRecibida:false})}/>
-          </>
-        )}
-      </div>
+      )}
 
-      {/* Hermilson */}
-      <div className="card rounded-2xl p-4 mb-5">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0"/>
-          <p className="font-bold text-sm">Hermilson</p>
-          <span className="text-xs text-gray-500">— Mampostería y obra civil</span>
+      {/* Ruta A: switch de excepción estructural */}
+      {getRuta(o)==="A"&&(
+        <div className="card rounded-2xl p-4 mb-3">
+          <Toggle on={o.requiereEstructural||false}
+            onToggle={()=>upd({requiereEstructural:!o.requiereEstructural})}
+            label="¿Requiere arreglos estructurales / quitar peso al techo?"
+            sub="Activa las tarjetas de Juan Guillermo y Hermilson para esta obra"/>
+          {!(o.requiereEstructural)&&(
+            <p className="text-xs text-gray-600 mt-2">Sin arreglos estructurales — Ruta A estándar.</p>
+          )}
         </div>
-        <Inp label="Valor acordado cliente → Hermilson (COP)" type="number"
-          value={o.pagoHerm||""} onChange={e=>upd({pagoHerm:e.target.value})} placeholder="0"/>
-        {pagoHerm>0&&(
-          <>
-            <div className="flex justify-between text-sm py-1 border-t border-white/5 mt-1">
-              <span className="text-gray-400">Comisión Kaston ({cfg.pctComisionHerm}%)</span>
-              <span className="text-orange-400 font-bold">{fmt(comHerm)}</span>
+      )}
+
+      {/* Tarjetas de contratistas (Ruta C siempre · Ruta A solo si switch activo) */}
+      {mostrarContratistas(o)&&(
+        <>
+          {/* Juan Guillermo */}
+          <div className="card rounded-2xl p-4 mb-3">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"/>
+              <p className="font-bold text-sm">Juan Guillermo</p>
+              <span className="text-xs text-gray-500">— Cubierta de madera</span>
             </div>
-            <AlertaCom nombre="Hermilson" monto={comHerm} recibida={o.comHermRecibida||false}
-              onMarcar={()=>upd({comHermRecibida:true})} onRevertir={()=>upd({comHermRecibida:false})}/>
-          </>
-        )}
-      </div>
+            <Inp label="Valor acordado cliente → Juan Guillermo (COP)" type="number"
+              value={o.pagoJG||""} onChange={e=>upd({pagoJG:e.target.value})} placeholder="0"/>
+            {pagoJG>0&&(
+              <>
+                <div className="flex justify-between text-sm py-1 border-t border-white/5 mt-1">
+                  <span className="text-gray-400">Comisión Kaston ({cfg.pctComisionJG}%)</span>
+                  <span className="text-orange-400 font-bold">{fmt(comJG)}</span>
+                </div>
+                <AlertaCom nombre="Juan Guillermo" monto={comJG} recibida={o.comJGRecibida||false}
+                  onMarcar={()=>upd({comJGRecibida:true})} onRevertir={()=>upd({comJGRecibida:false})}/>
+              </>
+            )}
+          </div>
+
+          {/* Hermilson */}
+          <div className="card rounded-2xl p-4 mb-5">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0"/>
+              <p className="font-bold text-sm">Hermilson</p>
+              <span className="text-xs text-gray-500">— Mampostería y obra civil</span>
+            </div>
+            <Inp label="Valor acordado cliente → Hermilson (COP)" type="number"
+              value={o.pagoHerm||""} onChange={e=>upd({pagoHerm:e.target.value})} placeholder="0"/>
+            {pagoHerm>0&&(
+              <>
+                <div className="flex justify-between text-sm py-1 border-t border-white/5 mt-1">
+                  <span className="text-gray-400">Comisión Kaston ({cfg.pctComisionHerm}%)</span>
+                  <span className="text-orange-400 font-bold">{fmt(comHerm)}</span>
+                </div>
+                <AlertaCom nombre="Hermilson" monto={comHerm} recibida={o.comHermRecibida||false}
+                  onMarcar={()=>upd({comHermRecibida:true})} onRevertir={()=>upd({comHermRecibida:false})}/>
+              </>
+            )}
+          </div>
+        </>
+      )}
 
       {/* ── Sheet: Divisor Automático ──────────────── */}
       <Sheet open={pagoSh} onClose={()=>{setPagoSh(false);setMontoPago("");}} title="Divisor Automático Kaston">
@@ -549,14 +596,14 @@ function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
   const [vista,setVista]=useState("lista");
   const [obraId,setObraId]=useState(null);
   const [sh,setSh]=useState(false);
-  const blank={nombre:"",cliente:"",direccion:"",m2:"",tipoContrato:"Solo Teja",estado:"Por iniciar",notas:""};
+  const blank={nombre:"",cliente:"",direccion:"",m2:"",ruta:"A",tipoContrato:"Únicamente La Teja",estado:"Por iniciar",notas:""};
   const [f,setF]=useState(blank);
   const upd=k=>e=>setF({...f,[k]:e.target.value});
   const cfg={...DEF_CFG,...config};
 
   const openForm=o=>{
     setF(o?{id:o.id,nombre:o.nombre||"",cliente:o.cliente||"",direccion:o.direccion||"",
-      m2:o.m2||"",tipoContrato:getTipo(o),estado:o.estado||"Por iniciar",notas:o.notas||""}:blank);
+      m2:o.m2||"",ruta:getRuta(o),tipoContrato:getTipo(o),estado:o.estado||"Por iniciar",notas:o.notas||""}:blank);
     setSh(true);
   };
 
@@ -564,6 +611,7 @@ function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
     if(!f.nombre.trim()) return;
     if(f.id) saveObras(obras.map(o=>o.id===f.id?{...o,...f}:o));
     else saveObras([{...f,id:uid(),fecha:hoy(),
+      requiereEstructural:false,
       suministrarMallas:false,listaCompras:[],mallasRegistradas:false,
       favorActivo:false,fondoFavores:"",listaFavores:[],
       pagoJG:"",pagoHerm:"",comJGRecibida:false,comHermRecibida:false,
@@ -582,8 +630,10 @@ function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
     const m2=n(o.m2);
     const venta=m2*getPrecioM2(o,cfg);
     const cobrado=(o.pagosKaston||[]).reduce((s,p)=>s+n(p.monto),0);
-    const comJGPend=n(o.pagoJG)>0&&(cfg.pctComisionJG||0)>0&&!o.comJGRecibida;
-    const comHPend =n(o.pagoHerm)>0&&(cfg.pctComisionHerm||0)>0&&!o.comHermRecibida;
+    // Solo muestra alerta de comisión si la ruta activa contratistas
+    const tieneContr=mostrarContratistas(o);
+    const comJGPend=tieneContr&&n(o.pagoJG)>0&&(cfg.pctComisionJG||0)>0&&!o.comJGRecibida;
+    const comHPend =tieneContr&&n(o.pagoHerm)>0&&(cfg.pctComisionHerm||0)>0&&!o.comHermRecibida;
     return {venta,cobrado,pendiente:Math.max(0,venta-cobrado),comPend:comJGPend||comHPend};
   };
 
@@ -613,6 +663,7 @@ function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
               </div>
             )}
             <div className="mt-2 flex gap-2 items-center flex-wrap">
+              {(()=>{const rt=RUTAS[getRuta(o)];return rt&&<span className={`text-[10px] px-1.5 py-0.5 rounded-full text-white ${rt.color}`}>{rt.label}</span>;})()}
               <span className="text-[10px] text-gray-600">{getTipo(o)}</span>
               {n(o.m2)>0&&<span className="text-[10px] text-gray-600">· {o.m2} m²</span>}
               {r.comPend&&<span className="text-[10px] text-orange-400">⚠ Comisión pendiente</span>}
@@ -631,18 +682,39 @@ function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
         </div>
         <Inp label="Dirección" value={f.direccion} onChange={upd("direccion")} placeholder="Dirección de la obra"/>
         <Inp label="Metros cuadrados (m²)" type="number" value={f.m2} onChange={upd("m2")} placeholder="0"/>
+
+        {/* Selector de Ruta */}
         <div className="mb-4">
-          <label className="block text-xs text-gray-400 mb-2">Tipo de contrato</label>
-          <div className="flex gap-2">
-            {[{v:"Solo Teja",p:85000},{v:"Todo Costo",p:106623}].map(({v,p})=>(
-              <button key={v} onClick={()=>setF({...f,tipoContrato:v})}
-                className={`flex-1 py-3 rounded-xl text-sm font-semibold border-2 transition ${f.tipoContrato===v?"border-orange-400 bg-orange-600/20 text-orange-300":"border-gray-700 bg-gray-800 text-gray-400"}`}>
-                <p>{v}</p>
-                <p className="text-xs font-normal opacity-75">{fmt(p)}/m²</p>
+          <label className="block text-xs text-gray-400 mb-2">Ruta del proyecto</label>
+          <div className="flex flex-col gap-2">
+            {Object.entries(RUTAS).map(([k,r])=>(
+              <button key={k} onClick={()=>setF({...f,ruta:k})}
+                className={`w-full py-3 px-4 rounded-xl text-left border-2 transition ${f.ruta===k?"border-orange-400 bg-orange-600/10":"border-gray-700 bg-gray-800/50"}`}>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full text-white font-bold ${r.color}`}>{r.label}</span>
+                  <span className={`text-sm font-semibold ${f.ruta===k?"text-orange-300":"text-gray-300"}`}>{r.desc}</span>
+                </div>
+                <p className="text-xs text-gray-500">{r.sub}</p>
               </button>
             ))}
           </div>
         </div>
+
+        {/* Tipo de contrato — siempre visible */}
+        <div className="mb-4">
+          <label className="block text-xs text-gray-400 mb-2">Tipo de contrato</label>
+          <div className="flex gap-2">
+            {[{v:"Únicamente La Teja",p:85000,s:"Solo material"},{v:"Todo Costo",p:106623,s:"Suministro + instalación"}].map(({v,p,s})=>(
+              <button key={v} onClick={()=>setF({...f,tipoContrato:v})}
+                className={`flex-1 py-3 rounded-xl text-sm font-semibold border-2 transition ${f.tipoContrato===v?"border-orange-400 bg-orange-600/20 text-orange-300":"border-gray-700 bg-gray-800 text-gray-400"}`}>
+                <p className="text-xs">{v}</p>
+                <p className="text-[11px] font-normal opacity-75 mt-0.5">{fmt(p)}/m²</p>
+                <p className="text-[9px] opacity-50 mt-0.5">{s}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <Sel label="Estado" opts={["Por iniciar","En curso","Terminada","Cotizado","Perdido"]} value={f.estado||"Por iniciar"} onChange={upd("estado")}/>
         <Txt label="Notas" value={f.notas||""} onChange={upd("notas")} placeholder="Detalles adicionales..."/>
         <PBtn onClick={guardar}>{f.id?"Guardar cambios":"Crear proyecto"}</PBtn>
@@ -657,6 +729,7 @@ function ComisionesTab({obras,saveObras,config}){
   const cfg={...DEF_CFG,...config};
   const items=[];
   obras.forEach(o=>{
+    if(!mostrarContratistas(o)) return; // Ruta B nunca; Ruta A sin switch = nunca
     const jg  =n(o.pagoJG)  *(cfg.pctComisionJG  ||0)/100;
     const herm=n(o.pagoHerm)*(cfg.pctComisionHerm||0)/100;
     if(jg>0)   items.push({key:o.id+"-jg",  obraId:o.id,obra:o.nombre,quien:"Juan Guillermo",pago:n(o.pagoJG),  pct:cfg.pctComisionJG,  monto:jg,  recibida:o.comJGRecibida  ||false,campo:"comJGRecibida"});
@@ -1013,9 +1086,7 @@ function App(){
 
   const cfg={...DEF_CFG,...config};
   const comBadge=obras.filter(o=>{
-    const jg  =n(o.pagoJG)  >(cfg.pctComisionJG  ||0)&&!o.comJGRecibida;
-    const herm=n(o.pagoHerm)>(cfg.pctComisionHerm||0)&&!o.comHermRecibida;
-    // Más preciso: tiene comisión pendiente si el monto > 0
+    if(!mostrarContratistas(o)) return false;
     const cj=n(o.pagoJG)  *(cfg.pctComisionJG  ||0)/100>0&&!o.comJGRecibida;
     const ch=n(o.pagoHerm)*(cfg.pctComisionHerm||0)/100>0&&!o.comHermRecibida;
     return cj||ch;
