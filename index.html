@@ -249,11 +249,11 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
   const listaFavores=o.listaFavores||[];
   const gastadoFavores=listaFavores.filter(i=>i.comprado).reduce((s,i)=>s+n(i.monto),0);
 
-  // Contratistas — % por proyecto con fallback al global
+  // Contratistas — % exclusivamente desde Ajustes globales
   const pagoJG  =n(o.pagoJG);
   const pagoHerm=n(o.pagoHerm);
-  const pctJG   =o.pctComJG  !==undefined&&o.pctComJG  !==""?n(o.pctComJG)  :(cfg.pctComisionJG  ||0);
-  const pctHerm =o.pctComHerm!==undefined&&o.pctComHerm!==""?n(o.pctComHerm):(cfg.pctComisionHerm||0);
+  const pctJG   =cfg.pctComisionJG  ||0;
+  const pctHerm =cfg.pctComisionHerm||0;
   const comJG   =pagoJG  *pctJG  /100;
   const comHerm =pagoHerm*pctHerm/100;
 
@@ -481,7 +481,7 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
           {[
             {
               key:"jg", dot:"bg-blue-500", nombre:"Juan Guillermo", rol:"Cubierta de madera",
-              campoPago:"pagoJG", campoPct:"pctComJG",
+              campoPago:"pagoJG",
               campoAntPct:"pctAnticipoJG", campoAntPag:"pagoAnticipoJG", campoSalPag:"pagoSaldoJG",
               campoRecibida:"comJGRecibida", campoFecha:"comJGFecha",
               pago:pagoJG, pct:pctJG, com:comJG, recibida:o.comJGRecibida||false, fecha:o.comJGFecha||"",
@@ -491,7 +491,7 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
             },
             {
               key:"herm", dot:"bg-purple-500", nombre:"Hermilson", rol:"Mampostería y obra civil",
-              campoPago:"pagoHerm", campoPct:"pctComHerm",
+              campoPago:"pagoHerm",
               campoAntPct:"pctAnticipoHerm", campoAntPag:"pagoAnticipoHerm", campoSalPag:"pagoSaldoHerm",
               campoRecibida:"comHermRecibida", campoFecha:"comHermFecha",
               pago:pagoHerm, pct:pctHerm, com:comHerm, recibida:o.comHermRecibida||false, fecha:o.comHermFecha||"",
@@ -530,15 +530,13 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
 
                 {ct.pago>0&&(
                   <>
-                    {/* % Comisión Kaston editable */}
-                    <div className="flex items-center gap-2 mb-4 p-2.5 bg-black/20 rounded-xl">
-                      <span className="text-xs text-gray-400 flex-1">% Comisión Kaston (esta obra)</span>
-                      <input type="number" min="0" max="100"
-                        className="w-14 bg-gray-800 border border-gray-700 rounded-xl px-2 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
-                        value={o[ct.campoPct]!==undefined&&o[ct.campoPct]!==""?o[ct.campoPct]:ct.pct}
-                        onChange={e=>upd({[ct.campoPct]:e.target.value})}/>
-                      <span className="text-gray-400 text-xs">%</span>
-                      <span className="text-orange-400 font-bold text-sm">{fmt(ct.com)}</span>
+                    {/* Comisión Kaston — solo desde Ajustes globales */}
+                    <div className="flex items-center justify-between mb-4 p-2.5 bg-black/20 rounded-xl">
+                      <div>
+                        <p className="text-xs text-gray-400">Comisión Kaston (desde Ajustes)</p>
+                        <p className="text-[10px] text-gray-600">{ct.pct}% del costo total · cambia en ⚙️</p>
+                      </div>
+                      <span className="text-orange-400 font-bold">{fmt(ct.com)}</span>
                     </div>
 
                     {/* ── Fases de pago ───────────────────────── */}
@@ -679,6 +677,7 @@ function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
   const [vista,setVista]=useState("lista");
   const [obraId,setObraId]=useState(null);
   const [sh,setSh]=useState(false);
+  const [pendingDel,setPendingDel]=useState(null); // id de obra en espera de confirmación
   const blank={nombre:"",cliente:"",direccion:"",m2:"",ruta:"A",tipoContrato:"Únicamente La Teja",estado:"Por iniciar",notas:""};
   const [f,setF]=useState(blank);
   const upd=k=>e=>setF({...f,[k]:e.target.value});
@@ -715,45 +714,79 @@ function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
     const cobrado=(o.pagosKaston||[]).reduce((s,p)=>s+n(p.monto),0);
     // Solo muestra alerta de comisión si la ruta activa contratistas
     const tieneContr=mostrarContratistas(o);
-    const pJG  =o.pctComJG  !==undefined&&o.pctComJG  !==""?n(o.pctComJG)  :(cfg.pctComisionJG  ||0);
-    const pHerm=o.pctComHerm!==undefined&&o.pctComHerm!==""?n(o.pctComHerm):(cfg.pctComisionHerm||0);
-    const comJGPend=tieneContr&&n(o.pagoJG)>0&&pJG>0&&!o.comJGRecibida;
-    const comHPend =tieneContr&&n(o.pagoHerm)>0&&pHerm>0&&!o.comHermRecibida;
+    const comJGPend=tieneContr&&n(o.pagoJG)>0&&(cfg.pctComisionJG||0)>0&&!o.comJGRecibida;
+    const comHPend =tieneContr&&n(o.pagoHerm)>0&&(cfg.pctComisionHerm||0)>0&&!o.comHermRecibida;
     return {venta,cobrado,pendiente:Math.max(0,venta-cobrado),comPend:comJGPend||comHPend};
   };
 
+  const TrashIcon=()=>(
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+    </svg>
+  );
+
   return(
     <div className="p-4">
-      <div className="flex justify-end mb-4">
-        <button onClick={()=>openForm()} className="btn-primary w-10 h-10 rounded-full flex items-center justify-center font-bold text-xl text-white">+</button>
-      </div>
-      {obras.length===0&&<p className="text-gray-500 text-center mt-16 text-sm">Sin proyectos. Toca + para crear uno.</p>}
+      {/* Botón prominente de agregar */}
+      <button onClick={()=>{setPendingDel(null);openForm();}}
+        className="btn-primary w-full py-3.5 rounded-2xl font-bold text-sm text-white mb-4 flex items-center justify-center gap-2">
+        <span className="text-lg font-black">+</span> Agregar Obra / Cliente
+      </button>
+
+      {obras.length===0&&<p className="text-gray-500 text-center mt-12 text-sm">Sin proyectos. Toca el botón para crear uno.</p>}
       {obras.map(o=>{
         const r=resumen(o);
+        const confirmando=pendingDel===o.id;
         return(
-          <div key={o.id} className="card card-hover rounded-2xl p-4 mb-3 cursor-pointer" onClick={()=>{setObraId(o.id);setVista("detalle");}}>
-            <div className="flex justify-between items-start mb-1">
-              <p className="font-semibold flex-1 pr-2">{o.nombre}</p>
-              <div className="flex items-center gap-1.5">
-                {r.comPend&&<span className="w-2 h-2 rounded-full bg-orange-500 pulse flex-shrink-0"/>}
-                <Badge s={o.estado||"Por iniciar"}/>
+          <div key={o.id} className="card rounded-2xl p-4 mb-3">
+            {/* Fila superior: nombre + acciones */}
+            <div className="flex items-start gap-2 mb-1">
+              <div className="flex-1 min-w-0 cursor-pointer" onClick={()=>{setPendingDel(null);setObraId(o.id);setVista("detalle");}}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold">{o.nombre}</p>
+                  {r.comPend&&<span className="w-2 h-2 rounded-full bg-orange-500 pulse flex-shrink-0"/>}
+                  <Badge s={o.estado||"Por iniciar"}/>
+                </div>
+                {o.cliente&&<p className="text-sm text-gray-400">Cliente: {o.cliente}</p>}
+              </div>
+              {/* Papelera */}
+              {!confirmando?(
+                <button onClick={e=>{e.stopPropagation();setPendingDel(o.id);}}
+                  className="flex-shrink-0 w-8 h-8 rounded-xl bg-gray-800 flex items-center justify-center text-gray-500 hover:text-red-400 transition-colors active:scale-90">
+                  <TrashIcon/>
+                </button>
+              ):(
+                <div className="flex-shrink-0 flex gap-1">
+                  <button onClick={e=>{e.stopPropagation();saveObras(obras.filter(x=>x.id!==o.id));setPendingDel(null);}}
+                    className="px-2 py-1 rounded-xl bg-red-700 text-white text-[10px] font-bold active:scale-90">
+                    Eliminar
+                  </button>
+                  <button onClick={e=>{e.stopPropagation();setPendingDel(null);}}
+                    className="px-2 py-1 rounded-xl bg-gray-700 text-gray-300 text-[10px] font-bold active:scale-90">
+                    No
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Métricas */}
+            <div className="cursor-pointer" onClick={()=>{setPendingDel(null);setObraId(o.id);setVista("detalle");}}>
+              {n(o.m2)>0&&(
+                <div className="mt-2 flex gap-3 flex-wrap">
+                  <div><p className="text-[9px] text-gray-500 uppercase">Venta</p><p className="text-xs font-semibold text-white">{fmt(r.venta)}</p></div>
+                  <div><p className="text-[9px] text-gray-500 uppercase">Cobrado</p><p className={`text-xs font-semibold ${r.cobrado>=r.venta&&r.venta>0?"text-green-400":"text-white"}`}>{fmt(r.cobrado)}</p></div>
+                  {r.pendiente>0&&<div><p className="text-[9px] text-gray-500 uppercase">Pendiente</p><p className="text-xs font-semibold text-orange-400">{fmt(r.pendiente)}</p></div>}
+                </div>
+              )}
+              <div className="mt-2 flex gap-2 items-center flex-wrap">
+                {(()=>{const rt=RUTAS[getRuta(o)];return rt&&<span className={`text-[10px] px-1.5 py-0.5 rounded-full text-white ${rt.color}`}>{rt.label}</span>;})()}
+                <span className="text-[10px] text-gray-600">{getTipo(o)}</span>
+                {n(o.m2)>0&&<span className="text-[10px] text-gray-600">· {o.m2} m²</span>}
+                {r.comPend&&<span className="text-[10px] text-orange-400">⚠ Comisión pendiente</span>}
               </div>
             </div>
-            {o.cliente&&<p className="text-sm text-gray-400">Cliente: {o.cliente}</p>}
-            {n(o.m2)>0&&(
-              <div className="mt-2 flex gap-3 flex-wrap">
-                <div><p className="text-[9px] text-gray-500 uppercase">Venta</p><p className="text-xs font-semibold text-white">{fmt(r.venta)}</p></div>
-                <div><p className="text-[9px] text-gray-500 uppercase">Cobrado</p><p className={`text-xs font-semibold ${r.cobrado>=r.venta&&r.venta>0?"text-green-400":"text-white"}`}>{fmt(r.cobrado)}</p></div>
-                {r.pendiente>0&&<div><p className="text-[9px] text-gray-500 uppercase">Pendiente</p><p className="text-xs font-semibold text-orange-400">{fmt(r.pendiente)}</p></div>}
-              </div>
-            )}
-            <div className="mt-2 flex gap-2 items-center flex-wrap">
-              {(()=>{const rt=RUTAS[getRuta(o)];return rt&&<span className={`text-[10px] px-1.5 py-0.5 rounded-full text-white ${rt.color}`}>{rt.label}</span>;})()}
-              <span className="text-[10px] text-gray-600">{getTipo(o)}</span>
-              {n(o.m2)>0&&<span className="text-[10px] text-gray-600">· {o.m2} m²</span>}
-              {r.comPend&&<span className="text-[10px] text-orange-400">⚠ Comisión pendiente</span>}
-            </div>
-            <button onClick={e=>{e.stopPropagation();openForm(o);}} className="mt-2 text-[10px] text-gray-600 underline">Editar datos</button>
+            <button onClick={e=>{e.stopPropagation();setPendingDel(null);openForm(o);}}
+              className="mt-2 text-[10px] text-gray-600 underline">Editar datos</button>
           </div>
         );
       })}
@@ -815,9 +848,9 @@ function ComisionesTab({obras,saveObras,config}){
   const items=[];
   obras.forEach(o=>{
     if(!mostrarContratistas(o)) return;
-    // Usa % por proyecto si está definido, si no el global
-    const pJG  =o.pctComJG  !==undefined&&o.pctComJG  !==""?n(o.pctComJG)  :(cfg.pctComisionJG  ||0);
-    const pHerm=o.pctComHerm!==undefined&&o.pctComHerm!==""?n(o.pctComHerm):(cfg.pctComisionHerm||0);
+    // % siempre desde Ajustes globales
+    const pJG  =cfg.pctComisionJG  ||0;
+    const pHerm=cfg.pctComisionHerm||0;
     const jg   =n(o.pagoJG)  *pJG  /100;
     const herm =n(o.pagoHerm)*pHerm/100;
     if(jg>0)   items.push({key:o.id+"-jg",  obraId:o.id,obra:o.nombre,quien:"Juan Guillermo",
@@ -1209,9 +1242,8 @@ function App(){
   const cfg={...DEF_CFG,...config};
   const comBadge=obras.filter(o=>{
     if(!mostrarContratistas(o)) return false;
-    const cj=n(o.pagoJG)  *(cfg.pctComisionJG  ||0)/100>0&&!o.comJGRecibida;
-    const ch=n(o.pagoHerm)*(cfg.pctComisionHerm||0)/100>0&&!o.comHermRecibida;
-    return cj||ch;
+    return (n(o.pagoJG)*(cfg.pctComisionJG||0)/100>0&&!o.comJGRecibida)||
+           (n(o.pagoHerm)*(cfg.pctComisionHerm||0)/100>0&&!o.comHermRecibida);
   }).length;
 
   const tabLabels=["Proyectos","Comisiones","Caja KASTON"];
