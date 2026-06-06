@@ -37,13 +37,14 @@
     .tab-bar{background:#0d0d0d;border-top:1px solid rgba(255,255,255,0.07);}
     .input-field{background:#1a1a1a;border:1px solid rgba(255,255,255,0.1);transition:border-color 0.2s;}
     .input-field:focus{border-color:rgba(184,115,51,0.55);outline:none;}
-    .badge{font-weight:600;letter-spacing:0.02em;}
     .section-label{font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;}
     @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
     .fade-in{animation:fadeIn 0.2s ease}
     .tab-icon-wrap{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 10px;border-radius:14px;transition:all 0.15s;}
     .safe-bottom{padding-bottom:env(safe-area-inset-bottom);}
     .no-select{-webkit-user-select:none;user-select:none;}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+    .pulse{animation:pulse 2s infinite;}
   </style>
 </head>
 <body>
@@ -54,59 +55,120 @@ const { useState, useEffect } = React;
 // ── Supabase ─────────────────────────────────────────────────
 const SB_URL = "https://rntjainqdzgttikmuxmv.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJudGphaW5xZHpndHRpa211eG12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyMzk3OTAsImV4cCI6MjA5NTgxNTc5MH0.7mJoDfKUdRuBDYOgQFujLEW8HQ9Gd5VQNiiAyWKpM54";
-const SB_H = { "apikey": SB_KEY, "Authorization": "Bearer " + SB_KEY, "Content-Type": "application/json" };
-const dbGet = k => fetch(`${SB_URL}/rest/v1/store?select=value&key=eq.${k}`,{headers:SB_H}).then(r=>r.json()).then(rows=>rows[0]?.value||null).catch(()=>null);
-const dbSet = (k,v) => fetch(`${SB_URL}/rest/v1/store`,{method:"POST",headers:{...SB_H,"Prefer":"resolution=merge-duplicates"},body:JSON.stringify({key:k,value:v})}).catch(()=>{});
-const dbPing = () => fetch(`${SB_URL}/rest/v1/store?select=key&limit=1`,{headers:SB_H}).then(r=>r.ok).catch(()=>false);
+const SB_H = {"apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY,"Content-Type":"application/json"};
+const dbGet = k=>fetch(`${SB_URL}/rest/v1/store?select=value&key=eq.${k}`,{headers:SB_H}).then(r=>r.json()).then(rows=>rows[0]?.value||null).catch(()=>null);
+const dbSet = (k,v)=>fetch(`${SB_URL}/rest/v1/store`,{method:"POST",headers:{...SB_H,"Prefer":"resolution=merge-duplicates"},body:JSON.stringify({key:k,value:v})}).catch(()=>{});
+const dbPing = ()=>fetch(`${SB_URL}/rest/v1/store?select=key&limit=1`,{headers:SB_H}).then(r=>r.ok).catch(()=>false);
 
-// ── Utilidades ───────────────────────────────────────────────
-const PIN_CODE = "2025";
-const DEF_EQ   = ["Juan Guillermo","Hermilson","Juanis"];
-const DEF_CFG  = { pctManoObra:30, pctCostosFijos:15, pctInversion:15 };
-const uid  = () => Math.random().toString(36).slice(2,9);
-const fmt  = n  => new Intl.NumberFormat("es-CO",{style:"currency",currency:"COP",maximumFractionDigits:0}).format(n||0);
-const hoy  = () => new Date().toLocaleDateString("es-CO");
+// ── Constantes de negocio ─────────────────────────────────────
+const PIN_CODE   = "2025";
+const TEJAS_M2   = 42;       // tejas por m² — fijo
+const M2_ROLLO   = 41.4;     // m² que cubre un rollo de malla
 
-function useStore(key, def=[]) {
-  const [data,setData] = useState(()=>{ try{const c=localStorage.getItem(key);if(c)return JSON.parse(c);}catch{}return def; });
-  const [ready,setReady] = useState(false);
-  useEffect(()=>{
-    (async()=>{
-      try{ const v=await dbGet(key); if(v){const p=JSON.parse(v);setData(p);localStorage.setItem(key,v);} }catch{}
-      setReady(true);
-    })();
-  },[key]);
-  const save = next => {
-    const d = typeof next==="function"?next(data):next;
-    setData(d);
-    const j=JSON.stringify(d);
-    try{localStorage.setItem(key,j);}catch{}
-    dbSet(key,j);
-  };
+const DEF_CFG = {
+  costoMaterial:    600,     // COP por teja
+  costoTrabajador:  270,     // COP por teja
+  costoArriendo:    70,      // COP por teja
+  costoLuz:         133,     // COP por teja
+  precioSoloTejaM2: 85000,   // precio al cliente — Solo Teja
+  precioTodoCostoM2:106623,  // precio al cliente — Todo Costo
+  precioMallaRollo: 262700,  // precio rollo malla al cliente
+  pctInversion:     15,      // % de utilidad neta → Fondo Crecimiento
+  pctComisionJG:    10,      // % sobre pago JG → comisión Kaston
+  pctComisionHerm:  10,      // % sobre pago Hermilson → comisión Kaston
+};
+
+// ── Utils ─────────────────────────────────────────────────────
+const uid  = ()=>Math.random().toString(36).slice(2,9);
+const fmt  = n=>new Intl.NumberFormat("es-CO",{style:"currency",currency:"COP",maximumFractionDigits:0}).format(n||0);
+const hoy  = ()=>new Date().toLocaleDateString("es-CO");
+const n    = v=>parseFloat(v)||0;
+
+function useStore(key,def=[]){
+  const [data,setData]=useState(()=>{try{const c=localStorage.getItem(key);if(c)return JSON.parse(c);}catch{}return def;});
+  const [ready,setReady]=useState(false);
+  useEffect(()=>{(async()=>{try{const v=await dbGet(key);if(v){const p=JSON.parse(v);setData(p);localStorage.setItem(key,v);}}catch{}setReady(true);})();},[key]);
+  const save=next=>{const d=typeof next==="function"?next(data):next;setData(d);const j=JSON.stringify(d);try{localStorage.setItem(key,j);}catch{}dbSet(key,j);};
   return [data,save,ready];
 }
 
-// ── UI base ──────────────────────────────────────────────────
-const ic   = "input-field w-full rounded-2xl px-4 py-3 text-white text-sm";
-const Inp  = ({label,...p}) => <div className="mb-3"><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>{label}</label><input className={ic} {...p}/></div>;
-const Sel  = ({label,opts,...p}) => <div className="mb-3"><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>{label}</label><select className={ic} {...p}>{opts.map(o=><option key={o}>{o}</option>)}</select></div>;
-const Txt  = ({label,...p}) => <div className="mb-3"><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>{label}</label><textarea className={ic+" h-20 resize-none"} {...p}/></div>;
-const PBtn = ({danger,secondary,...p}) => <button className={`w-full py-3.5 rounded-2xl font-bold text-sm text-white mb-2 active:scale-95 transition-transform ${danger?"btn-danger":secondary?"bg-gray-700":"btn-primary"}`} {...p}/>;
-const BC   = {"Por iniciar":"bg-slate-600","En curso":"bg-blue-600","Terminada":"bg-green-600","Perdido":"bg-red-700","Cotizado":"bg-yellow-600","Aprobado":"bg-green-600","Nuevo":"bg-blue-600"};
-const Badge = ({s}) => <span className={`badge text-xs px-2.5 py-0.5 rounded-full text-white ${BC[s]||"bg-gray-700"}`}>{s}</span>;
+// ── Lógica financiera ─────────────────────────────────────────
+// Detecta el tipo de contrato compatible con versiones anteriores
+function getTipo(o){
+  if(o.tipoContrato==="Todo Costo") return "Todo Costo";
+  if(o.tipoContrato==="Solo Teja")  return "Solo Teja";
+  if(o.precio==="Todo costo")       return "Todo Costo";
+  return "Solo Teja";
+}
 
-function Sheet({open,onClose,title,children}) {
-  return (
+function getPrecioM2(o,cfg){
+  return getTipo(o)==="Todo Costo"?(cfg.precioTodoCostoM2||106623):(cfg.precioSoloTejaM2||85000);
+}
+
+// Dispersión proporcional de un pago
+function calcDisp(monto,m2,o,cfg){
+  const total=(n(m2)*getPrecioM2(o,cfg));
+  if(!total||!n(monto)) return null;
+  const ratio=n(monto)/total;
+  const tejas=ratio*n(m2)*TEJAS_M2;
+  const matPrima    =tejas*(cfg.costoMaterial   ||600);
+  const nomina      =tejas*(cfg.costoTrabajador  ||270);
+  const costosFijos =tejas*((cfg.costoArriendo||70)+(cfg.costoLuz||133));
+  const totalCostos =matPrima+nomina+costosFijos;
+  const utilNeta    =n(monto)-totalCostos;
+  const inversion   =Math.max(0,utilNeta)*(cfg.pctInversion||0)/100;
+  return {tejas,matPrima,nomina,costosFijos,totalCostos,utilNeta,inversion,utilLibre:utilNeta-inversion};
+}
+
+// Calcular rollos de malla necesarios
+function calcRollos(m2,cfg){
+  const r=Math.ceil(n(m2)/M2_ROLLO);
+  return {rollos:r,total:r*(cfg.precioMallaRollo||262700)};
+}
+
+// Calcular estado de bolsas desde caja
+function calcBolsas(caja){
+  const b={matPrima:0,nomina:0,costosFijos:0,inversion:0,disponible:0};
+  for(const e of caja){
+    const m=n(e.monto);
+    if(e.tipo==="matPrima")    b.matPrima   +=m;
+    if(e.tipo==="nomina")      b.nomina      +=m;
+    if(e.tipo==="costosFijos") b.costosFijos +=m;
+    if(e.tipo==="inversion")   b.inversion   +=m;
+    if(e.tipo==="utilLibre")   b.disponible  +=m;
+    if(e.tipo==="mallas")      b.disponible  +=m;
+    if(e.tipo==="gastoManual"){
+      if(e.deBolsa==="nomina")      b.nomina      -=m;
+      if(e.deBolsa==="matPrima")    b.matPrima    -=m;
+      if(e.deBolsa==="costosFijos") b.costosFijos -=m;
+      if(e.deBolsa==="inversion")   b.inversion   -=m;
+      if(e.deBolsa==="disponible")  b.disponible  -=m;
+    }
+  }
+  return b;
+}
+
+// ── UI primitives ─────────────────────────────────────────────
+const ic  ="input-field w-full rounded-2xl px-4 py-3 text-white text-sm";
+const Inp =({label,...p})=><div className="mb-3"><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>{label}</label><input className={ic} {...p}/></div>;
+const Sel =({label,opts,...p})=><div className="mb-3"><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>{label}</label><select className={ic} {...p}>{opts.map(o=><option key={o}>{o}</option>)}</select></div>;
+const Txt =({label,...p})=><div className="mb-3"><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>{label}</label><textarea className={ic+" h-20 resize-none"} {...p}/></div>;
+const PBtn=({danger,...p})=><button className={`w-full py-3.5 rounded-2xl font-bold text-sm text-white mb-2 active:scale-95 transition-transform ${danger?"btn-danger":"btn-primary"}`} {...p}/>;
+const BC  ={"Por iniciar":"bg-slate-600","En curso":"bg-blue-600","Terminada":"bg-green-600","Perdido":"bg-red-700","Cotizado":"bg-yellow-600","Aprobado":"bg-green-600"};
+const Badge=({s})=><span className={`text-xs px-2.5 py-0.5 rounded-full text-white font-semibold ${BC[s]||"bg-gray-700"}`}>{s}</span>;
+
+function Sheet({open,onClose,title,children}){
+  return(
     <div className={`fixed inset-0 z-50 ${open?"":"pointer-events-none"}`}
-      style={{background:open?"rgba(0,0,0,0.72)":"transparent",transition:"background 0.3s"}}
+      style={{background:open?"rgba(0,0,0,0.75)":"transparent",transition:"background 0.3s"}}
       onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
       <div className={`sheet-bg absolute bottom-0 inset-x-0 rounded-t-3xl transition-transform duration-300 ${open?"translate-y-0":"translate-y-full"}`}
         onClick={e=>e.stopPropagation()}>
         <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full bg-white/10"/></div>
-        <div className="px-5" style={{overflowY:"auto",WebkitOverflowScrolling:"touch",maxHeight:"90vh",paddingBottom:"calc(env(safe-area-inset-bottom) + 100px)"}}>
+        <div className="px-5" style={{overflowY:"auto",WebkitOverflowScrolling:"touch",maxHeight:"90vh",paddingBottom:"calc(env(safe-area-inset-bottom)+100px)"}}>
           <div className="flex justify-between items-center mb-5 pt-2">
             <h2 className="text-lg font-bold tracking-tight">{title}</h2>
-            <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 text-lg">×</button>
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/8 flex items-center justify-center text-gray-400 text-xl">×</button>
           </div>
           {children}
         </div>
@@ -115,25 +177,25 @@ function Sheet({open,onClose,title,children}) {
   );
 }
 
-const Volver = ({titulo,sub,onBack}) => (
+const Volver=({titulo,sub,onBack})=>(
   <div className="flex items-center gap-3 mb-4 pb-3" style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
     <button onClick={onBack} style={{color:"#B87333",fontWeight:700,fontSize:22,background:"none",border:"none",cursor:"pointer",padding:"0 4px",lineHeight:1}}>‹</button>
     <div className="flex-1 min-w-0">
       <p className="font-bold text-base truncate">{titulo}</p>
-      {sub && <p className="text-xs text-gray-500">{sub}</p>}
+      {sub&&<p className="text-xs text-gray-500 truncate">{sub}</p>}
     </div>
   </div>
 );
 
-function Toggle({on,onToggle,label,sublabel}) {
-  return (
+function Toggle({on,onToggle,label,sub}){
+  return(
     <div className="flex items-center justify-between py-2.5">
-      <div>
+      <div className="flex-1 pr-3">
         <p className="text-sm text-gray-200">{label}</p>
-        {sublabel && <p className="text-xs text-gray-500">{sublabel}</p>}
+        {sub&&<p className="text-xs text-gray-500">{sub}</p>}
       </div>
       <button onClick={onToggle}
-        className={`relative w-12 h-6 rounded-full transition-colors flex-shrink-0 ml-3 ${on?"bg-orange-500":"bg-gray-600"}`}>
+        className={`relative w-12 h-6 rounded-full transition-colors flex-shrink-0 ${on?"bg-orange-500":"bg-gray-600"}`}>
         <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
           style={{left:on?"calc(100% - 22px)":"2px"}}/>
       </button>
@@ -141,655 +203,737 @@ function Toggle({on,onToggle,label,sublabel}) {
   );
 }
 
+function AlertaCom({nombre,monto,recibida,onMarcar,onRevertir}){
+  if(!monto) return null;
+  if(recibida) return(
+    <div className="rounded-xl p-3 mt-2 bg-green-900/30 border border-green-700/40 flex justify-between items-center">
+      <div><p className="text-green-400 text-xs font-bold">✓ Comisión recibida</p><p className="text-green-300 text-xs">{fmt(monto)}</p></div>
+      <button onClick={onRevertir} className="text-xs text-gray-500 underline">Revertir</button>
+    </div>
+  );
+  return(
+    <div className="rounded-xl p-3 mt-2 bg-orange-900/30 border border-orange-700/50">
+      <p className="text-orange-300 text-xs font-bold mb-0.5">⚠ Comisión pendiente</p>
+      <p className="text-orange-200 text-xs mb-3">{nombre} debe {fmt(monto)} de comisión por esta obra.</p>
+      <button onClick={onMarcar} className="w-full py-2 rounded-xl bg-orange-600 text-white text-xs font-bold active:scale-95 transition-transform">
+        ✓ Marcar como Recibido
+      </button>
+    </div>
+  );
+}
+
 // ── ProyectoDetalle ──────────────────────────────────────────
-function ProyectoDetalle({obraId,obras,saveObras,comisiones,config,caja,saveCaja,onBack}) {
-  const o = obras.find(x=>x.id===obraId);
-  if(!o) { onBack(); return null; }
+function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
+  const o=obras.find(x=>x.id===obraId);
+  if(!o){onBack();return null;}
+  const upd=patch=>saveObras(obras.map(x=>x.id===o.id?{...x,...patch}:x));
+  const cfg={...DEF_CFG,...config};
 
-  const upd = patch => saveObras(obras.map(x=>x.id===o.id?{...x,...patch}:x));
+  // Datos base
+  const m2=n(o.m2);
+  const tipo=getTipo(o);
+  const precioM2=getPrecioM2(o,cfg);
+  const ventaTejas=m2*precioM2;
+  const tejasTotales=m2*TEJAS_M2;
 
-  // KASTON
-  const ventaTejas      = parseFloat(o.ventaTejas)||0;
-  const favorMat        = o.favorMateriales||false;
-  const fondoMat        = parseFloat(o.fondoMateriales)||0;
-  const listaCompras    = o.listaCompras||[];
-  const gastoCompras    = listaCompras.filter(i=>i.comprado).reduce((s,i)=>s+(parseFloat(i.monto)||0),0);
-  const pagosKaston     = o.pagosKaston||[];
-  const totalCobrado    = pagosKaston.reduce((s,p)=>s+(parseFloat(p.monto)||0),0);
-  const pendienteCobrar = Math.max(0,ventaTejas-totalCobrado);
+  // Pagos Kaston
+  const pagosKaston=o.pagosKaston||[];
+  const totalCobrado=pagosKaston.reduce((s,p)=>s+n(p.monto),0);
+  const pendiente=Math.max(0,ventaTejas-totalCobrado);
 
-  // Contratista
-  const contNombre  = o.contratoInstalador||"";
-  const pagoDirecto = parseFloat(o.pagoDirectoInstalador)||0;
-  const pctCom      = parseFloat(comisiones[contNombre])||0;
-  const montoCom    = pagoDirecto * pctCom / 100;
-  const comRecibida = o.comisionRecibida||false;
+  // Mallas
+  const {rollos,total:totalMallas}=calcRollos(m2,cfg);
+  const listaCompras=o.listaCompras||[];
 
-  // Divisor
-  const [pagoSh,setPagoSh]     = useState(false);
-  const [montoPago,setMontoPago] = useState("");
-  const [nuevoItem,setNuevoItem] = useState({concepto:"",monto:""});
+  // Favores
+  const fondoFavores=n(o.fondoFavores);
+  const listaFavores=o.listaFavores||[];
+  const gastadoFavores=listaFavores.filter(i=>i.comprado).reduce((s,i)=>s+n(i.monto),0);
 
-  const calcDiv = m => {
-    const manoObra    = m*(config.pctManoObra||0)/100;
-    const costosFijos = m*(config.pctCostosFijos||0)/100;
-    const utilNeta    = m - manoObra - costosFijos;
-    const inversion   = Math.max(0,utilNeta)*(config.pctInversion||0)/100;
-    return {manoObra,costosFijos,utilNeta,inversion,utilLibre:utilNeta-inversion};
-  };
-  const div = calcDiv(parseFloat(montoPago)||0);
+  // Contratistas
+  const pagoJG  =n(o.pagoJG);
+  const pagoHerm=n(o.pagoHerm);
+  const comJG   =pagoJG   *(cfg.pctComisionJG||0)/100;
+  const comHerm =pagoHerm *(cfg.pctComisionHerm||0)/100;
 
-  const registrarPago = () => {
-    const m = parseFloat(montoPago)||0;
-    if(!m) return;
-    const d = calcDiv(m);
-    upd({pagosKaston:[...pagosKaston,{id:uid(),monto:m,fecha:hoy(),desglose:d}]});
-    saveCaja(prev=>[
-      ...prev,
-      {id:uid(),tipo:"ingreso",  concepto:`Tejas — ${o.nombre}`,           monto:m,          fecha:hoy(),obraId:o.id},
-      {id:uid(),tipo:"gasto",    concepto:"Mano de obra fabricación",       monto:d.manoObra, fecha:hoy(),obraId:o.id,categoria:"nomina"},
-      {id:uid(),tipo:"gasto",    concepto:"Costos fijos (arriendo+luz)",    monto:d.costosFijos,fecha:hoy(),obraId:o.id,categoria:"costos_fijos"},
-      ...(d.inversion>0?[{id:uid(),tipo:"inversion",concepto:"Fondo de Crecimiento",monto:d.inversion,fecha:hoy(),obraId:o.id}]:[]),
+  // Local state
+  const [pagoSh,setPagoSh]=useState(false);
+  const [montoPago,setMontoPago]=useState("");
+  const [nuevoFavor,setNuevoFavor]=useState({concepto:"",monto:""});
+  const div=calcDisp(n(montoPago),m2,o,cfg);
+
+  const registrarPago=()=>{
+    const m=n(montoPago);
+    if(!m||!div) return;
+    upd({pagosKaston:[...pagosKaston,{id:uid(),monto:m,fecha:hoy(),desglose:div}]});
+    saveCaja(prev=>[...prev,
+      {id:uid(),tipo:"matPrima",    monto:div.matPrima,    concepto:`Mat.Prima — ${o.nombre}`,    fecha:hoy(),obraId:o.id},
+      {id:uid(),tipo:"nomina",      monto:div.nomina,      concepto:`Nómina — ${o.nombre}`,       fecha:hoy(),obraId:o.id},
+      {id:uid(),tipo:"costosFijos", monto:div.costosFijos, concepto:`Costos Fijos — ${o.nombre}`, fecha:hoy(),obraId:o.id},
+      ...(div.inversion>0?[{id:uid(),tipo:"inversion",monto:div.inversion,concepto:`Fondo Crec. — ${o.nombre}`,fecha:hoy(),obraId:o.id}]:[]),
+      {id:uid(),tipo:"utilLibre",   monto:div.utilLibre,   concepto:`Utilidad — ${o.nombre}`,    fecha:hoy(),obraId:o.id},
     ]);
     setMontoPago(""); setPagoSh(false);
   };
 
-  const addItem = () => {
-    const c=nuevoItem.concepto.trim(),m=parseFloat(nuevoItem.monto)||0;
-    if(!c) return;
-    upd({listaCompras:[...listaCompras,{id:uid(),concepto:c,monto:m,comprado:false}]});
-    setNuevoItem({concepto:"",monto:""});
+  const registrarMallas=()=>{
+    if(o.mallasRegistradas) return;
+    upd({mallasRegistradas:true});
+    saveCaja(prev=>[...prev,{id:uid(),tipo:"mallas",monto:totalMallas,concepto:`Mallas — ${o.nombre}`,fecha:hoy(),obraId:o.id}]);
   };
-  const toggleItem = id => upd({listaCompras:listaCompras.map(i=>i.id===id?{...i,comprado:!i.comprado}:i)});
-  const delItem    = id => upd({listaCompras:listaCompras.filter(i=>i.id!==id)});
 
-  const pctConfig = config.pctManoObra||0;
-  const totalPct  = (config.pctManoObra||0)+(config.pctCostosFijos||0);
+  const toggleMallasSwitch=()=>{
+    const next=!o.suministrarMallas;
+    const lista=next&&rollos>0?[{id:uid(),concepto:`Comprar ${rollos} rollo${rollos>1?"s":""} Malla Electrosoldada 4mm`,monto:0,comprado:false}]:[];
+    upd({suministrarMallas:next,listaCompras:lista,mallasRegistradas:false});
+  };
 
-  return (
-    <div className="p-4 fade-in" style={{paddingBottom:"calc(env(safe-area-inset-bottom) + 96px)"}}>
+  const toggleCompra=id=>upd({listaCompras:listaCompras.map(i=>i.id===id?{...i,comprado:!i.comprado}:i)});
+
+  const addFavor=()=>{
+    const c=nuevoFavor.concepto.trim();
+    if(!c) return;
+    upd({listaFavores:[...listaFavores,{id:uid(),concepto:c,monto:n(nuevoFavor.monto),comprado:false}]});
+    setNuevoFavor({concepto:"",monto:""});
+  };
+  const toggleFavor=id=>upd({listaFavores:listaFavores.map(i=>i.id===id?{...i,comprado:!i.comprado}:i)});
+  const delFavor  =id=>upd({listaFavores:listaFavores.filter(i=>i.id!==id)});
+
+  return(
+    <div className="p-4 fade-in" style={{paddingBottom:"calc(env(safe-area-inset-bottom)+96px)"}}>
       <Volver titulo={o.nombre} sub={o.cliente?"Cliente: "+o.cliente:o.direccion||""} onBack={onBack}/>
 
-      <div className="flex items-center gap-2 mb-5">
+      <div className="flex items-center gap-2 mb-5 flex-wrap">
         <Badge s={o.estado||"Por iniciar"}/>
-        {o.direccion && <span className="text-xs text-gray-500 truncate">{o.direccion}</span>}
+        <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{tipo}</span>
+        {m2>0&&<span className="text-xs text-gray-500">{m2} m² · {tejasTotales.toLocaleString()} tejas</span>}
       </div>
 
-      {/* ── SECCIÓN KASTON ───────────────────────── */}
-      <p className="section-label mb-2">Sección Kaston — Lo que ingresa a tu empresa</p>
+      {/* ══ A — SECCIÓN KASTON ═══════════════════════ */}
+      <p className="section-label mb-2">A — Sección Kaston</p>
 
-      <div className="card rounded-2xl p-4 mb-4">
-        <p className="text-xs text-gray-400 font-semibold mb-3">Venta de Tejas / Consultoría</p>
-        <Inp label="Valor que el cliente te paga a ti (COP)" type="number"
-          value={o.ventaTejas||""} onChange={e=>upd({ventaTejas:e.target.value})} placeholder="0"/>
-        {ventaTejas>0 && (
-          <div className="border-t border-white/5 pt-3 mt-1">
-            <div className="flex justify-between text-sm py-1">
-              <span className="text-gray-400">Cobrado</span>
-              <span className={totalCobrado>=ventaTejas?"text-green-400":"text-white"}>{fmt(totalCobrado)}</span>
+      {/* Venta de Tejas */}
+      <div className="card rounded-2xl p-4 mb-3">
+        <div className="flex justify-between items-start mb-3">
+          <div>
+            <p className="text-xs text-gray-500 mb-0.5">Venta de Tejas</p>
+            <p className="text-2xl font-black text-white">{m2>0?fmt(ventaTejas):"—"}</p>
+            {m2>0&&<p className="text-xs text-gray-600">{m2} m² × {fmt(precioM2)}/m²</p>}
+          </div>
+          {ventaTejas>0&&(
+            <div className="text-right">
+              <p className="text-[9px] text-gray-500 uppercase">Cobrado</p>
+              <p className={`text-sm font-bold ${totalCobrado>=ventaTejas?"text-green-400":"text-white"}`}>{fmt(totalCobrado)}</p>
+              {pendiente>0&&<p className="text-xs text-orange-400 mt-0.5">Faltan {fmt(pendiente)}</p>}
             </div>
-            <div className="flex justify-between text-sm py-1">
-              <span className="text-gray-400">Pendiente de cobrar</span>
-              <span className={pendienteCobrar>0?"text-orange-400":"text-green-400"}>{fmt(pendienteCobrar)}</span>
+          )}
+        </div>
+
+        {/* Historial de pagos */}
+        {pagosKaston.length>0&&(
+          <div className="border-t border-white/5 pt-3 mb-3">
+            {pagosKaston.map((p,i)=>(
+              <div key={p.id} className={`py-2.5 ${i<pagosKaston.length-1?"border-b border-white/5":""}`}>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-500 text-xs">{p.fecha}</span>
+                  <span className="text-green-400 font-bold">{fmt(p.monto)}</span>
+                </div>
+                {p.desglose&&(
+                  <div className="grid grid-cols-4 gap-1">
+                    {[
+                      {l:"Mat.Prima",v:p.desglose.matPrima,c:"text-yellow-400"},
+                      {l:"Nómina",   v:p.desglose.nomina,  c:"text-orange-400"},
+                      {l:"C.Fijos",  v:p.desglose.costosFijos,c:"text-red-400"},
+                      {l:"Inversión",v:p.desglose.inversion,c:"text-blue-400"},
+                    ].map(({l,v,c})=>(
+                      <div key={l} className="bg-black/30 rounded-xl p-1.5 text-center">
+                        <p className="text-[8px] text-gray-500">{l}</p>
+                        <p className={`text-[10px] font-semibold ${c}`}>{fmt(v)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {p.desglose&&p.desglose.utilLibre>0&&(
+                  <p className="text-xs text-green-400 mt-1.5">Utilidad libre: {fmt(p.desglose.utilLibre)}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {ventaTejas>0&&(
+          <button onClick={()=>setPagoSh(true)}
+            className="btn-primary w-full py-3 rounded-2xl font-bold text-sm text-white active:scale-95 transition-transform">
+            + Registrar pago recibido
+          </button>
+        )}
+        {!m2&&<p className="text-xs text-gray-600 text-center py-1">Define los m² en "Editar datos" para calcular la venta.</p>}
+      </div>
+
+      {/* Switch Mallas */}
+      <div className="card rounded-2xl p-4 mb-3">
+        <Toggle on={o.suministrarMallas||false} onToggle={toggleMallasSwitch}
+          label="Suministrar Materiales Base (Mallas)"
+          sub={m2>0?`${rollos} rollo${rollos!==1?"s":""} Malla Electrosoldada · cobrar ${fmt(totalMallas)}`:"Define los m² primero"}/>
+        {o.suministrarMallas&&m2>0&&(
+          <div className="mt-3 border-t border-white/5 pt-3">
+            <div className="rounded-xl p-3 mb-3 bg-orange-900/20 border border-orange-700/30">
+              <p className="text-xs text-orange-400 font-semibold mb-0.5">Cobrar al cliente por mallas</p>
+              <p className="text-xl font-black text-orange-300">{fmt(totalMallas)}</p>
+              <p className="text-xs text-gray-600">{rollos} rollo{rollos!==1?"s":""} × {fmt(cfg.precioMallaRollo)}/rollo</p>
             </div>
+            {listaCompras.map(item=>(
+              <div key={item.id} className="flex items-center gap-2 py-2 border-b border-gray-800 last:border-0">
+                <button onClick={()=>toggleCompra(item.id)}
+                  className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${item.comprado?"bg-green-600 border-green-600":"border-gray-500"}`}>
+                  {item.comprado&&<span className="text-white text-xs">✓</span>}
+                </button>
+                <span className={`text-sm flex-1 ${item.comprado?"line-through text-gray-500":""}`}>{item.concepto}</span>
+              </div>
+            ))}
+            {!o.mallasRegistradas?(
+              <button onClick={registrarMallas}
+                className="mt-3 w-full py-2.5 rounded-xl bg-green-800 text-white text-xs font-bold active:scale-95 transition-transform">
+                ✓ Registrar cobro de mallas al cliente ({fmt(totalMallas)})
+              </button>
+            ):(
+              <p className="text-xs text-green-400 text-center mt-3 py-2">✓ Cobro de mallas registrado — {fmt(totalMallas)}</p>
+            )}
           </div>
         )}
       </div>
 
-      {/* Fondo de Materiales */}
-      <div className="card rounded-2xl p-4 mb-4">
-        <Toggle on={favorMat} onToggle={()=>upd({favorMateriales:!favorMat})}
-          label="¿Hacer favor de comprar materiales?"
-          sublabel="Activa si el cliente te dio plata para comprar madera, tornillos, etc."/>
-        {favorMat && (
-          <div className="mt-3 border-t border-white/5 pt-3">
-            <Inp label="Dinero recibido del cliente para materiales (COP)" type="number"
-              value={o.fondoMateriales||""} onChange={e=>upd({fondoMateriales:e.target.value})} placeholder="0"/>
+      {/* ══ B — FAVORES ══════════════════════════════ */}
+      <p className="section-label mb-2">B — Favores de Compra y Logística</p>
 
-            {fondoMat>0 && (
-              <div className="grid grid-cols-3 gap-2 mb-4">
-                <div className="bg-black/25 rounded-xl p-2 text-center">
-                  <p className="text-[9px] text-gray-500 uppercase mb-0.5">Recibido</p>
-                  <p className="text-xs font-bold text-white">{fmt(fondoMat)}</p>
-                </div>
-                <div className="bg-black/25 rounded-xl p-2 text-center">
-                  <p className="text-[9px] text-gray-500 uppercase mb-0.5">Gastado</p>
-                  <p className="text-xs font-bold text-orange-400">{fmt(gastoCompras)}</p>
-                </div>
-                <div className="bg-black/25 rounded-xl p-2 text-center">
-                  <p className="text-[9px] text-gray-500 uppercase mb-0.5">Saldo</p>
-                  <p className={`text-xs font-bold ${fondoMat-gastoCompras>=0?"text-green-400":"text-red-400"}`}>{fmt(fondoMat-gastoCompras)}</p>
-                </div>
+      <div className="card rounded-2xl p-4 mb-3">
+        <Toggle on={o.favorActivo||false} onToggle={()=>upd({favorActivo:!o.favorActivo})}
+          label="Favores de compra y logística"
+          sub="Cuentas de paso — no suma a ingresos Kaston"/>
+        {o.favorActivo&&(
+          <div className="mt-3 border-t border-white/5 pt-3">
+            <Inp label="Dinero recibido del cliente para favores (COP)" type="number"
+              value={o.fondoFavores||""} onChange={e=>upd({fondoFavores:e.target.value})} placeholder="0"/>
+            {fondoFavores>0&&(
+              <div className={`rounded-xl p-3 mb-3 ${fondoFavores-gastadoFavores>=0?"bg-blue-900/20 border border-blue-700/30":"bg-red-900/20 border border-red-700/40"}`}>
+                <p className="text-xs text-gray-400 mb-0.5">Fondos de Terceros Disponibles</p>
+                <p className={`text-xl font-black ${fondoFavores-gastadoFavores>=0?"text-blue-200":"text-red-400"}`}>
+                  {fmt(fondoFavores-gastadoFavores)}
+                </p>
+                <p className="text-[10px] text-gray-600">Recibido: {fmt(fondoFavores)} · Gastado: {fmt(gastadoFavores)}</p>
               </div>
             )}
-
-            <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Falta por comprar</p>
-            {listaCompras.length===0 && <p className="text-xs text-gray-600 mb-3">Sin ítems. Agrégalos abajo.</p>}
-            {listaCompras.map(item=>(
+            {listaFavores.map(item=>(
               <div key={item.id} className="flex items-center gap-2 py-2 border-b border-gray-800">
-                <button onClick={()=>toggleItem(item.id)}
+                <button onClick={()=>toggleFavor(item.id)}
                   className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${item.comprado?"bg-green-600 border-green-600":"border-gray-500"}`}>
-                  {item.comprado && <span className="text-white text-xs">✓</span>}
+                  {item.comprado&&<span className="text-white text-xs">✓</span>}
                 </button>
                 <span className={`text-sm flex-1 ${item.comprado?"line-through text-gray-500":""}`}>{item.concepto}</span>
-                {item.monto>0 && <span className={`text-sm font-medium ${item.comprado?"text-gray-600":"text-orange-400"}`}>{fmt(item.monto)}</span>}
-                <button onClick={()=>delItem(item.id)} className="text-red-500 text-lg leading-none ml-1">×</button>
+                {item.monto>0&&<span className={`text-sm font-medium flex-shrink-0 ${item.comprado?"text-gray-600":"text-gray-300"}`}>{fmt(item.monto)}</span>}
+                <button onClick={()=>delFavor(item.id)} className="text-red-500 text-lg ml-1 flex-shrink-0 leading-none">×</button>
               </div>
             ))}
             <div className="flex gap-2 mt-3">
-              <input className={ic+" flex-1"} placeholder="¿Qué falta?" value={nuevoItem.concepto}
-                onChange={e=>setNuevoItem({...nuevoItem,concepto:e.target.value})}
-                onKeyDown={e=>{if(e.key==="Enter")addItem();}}/>
-              <input className={ic+" w-28"} type="number" placeholder="$" value={nuevoItem.monto}
-                onChange={e=>setNuevoItem({...nuevoItem,monto:e.target.value})}/>
-              <button onClick={addItem} className="btn-primary rounded-xl px-4 text-white font-bold text-xl flex-shrink-0">+</button>
+              <input className={ic+" flex-1"} placeholder="¿Qué hay que comprar?" value={nuevoFavor.concepto}
+                onChange={e=>setNuevoFavor({...nuevoFavor,concepto:e.target.value})}
+                onKeyDown={e=>{if(e.key==="Enter")addFavor();}}/>
+              <input className={ic+" w-28"} type="number" placeholder="$" value={nuevoFavor.monto}
+                onChange={e=>setNuevoFavor({...nuevoFavor,monto:e.target.value})}/>
+              <button onClick={addFavor} className="btn-primary rounded-xl px-4 text-white font-bold text-xl flex-shrink-0">+</button>
             </div>
           </div>
         )}
       </div>
 
-      {/* ── SECCIÓN CONTRATISTA ───────────────────── */}
-      <p className="section-label mb-2">Sección Contratista — Informativa</p>
+      {/* ══ C — CONTRATISTAS ══════════════════════════ */}
+      <p className="section-label mb-2">C — Contratistas</p>
 
-      <div className="card rounded-2xl p-4 mb-4">
-        <div className="mb-3">
-          <label className="block text-xs text-gray-400 mb-1">Instalador / Contratista</label>
-          <input className={ic} value={o.contratoInstalador||""} onChange={e=>upd({contratoInstalador:e.target.value})} placeholder="Nombre del instalador"/>
+      {/* Juan Guillermo */}
+      <div className="card rounded-2xl p-4 mb-3">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"/>
+          <p className="font-bold text-sm">Juan Guillermo</p>
+          <span className="text-xs text-gray-500">— Cubierta de madera</span>
         </div>
-        <Inp label="Pago directo del cliente al instalador (COP) — no entra a Kaston" type="number"
-          value={o.pagoDirectoInstalador||""} onChange={e=>upd({pagoDirectoInstalador:e.target.value})} placeholder="0"/>
-
-        {pagoDirecto>0 && (
-          <div className="border-t border-white/5 pt-3 mt-1">
-            <div className="flex justify-between text-sm py-1">
-              <span className="text-gray-400">Pago cliente → instalador</span>
-              <span className="text-gray-300">{fmt(pagoDirecto)}</span>
+        <Inp label="Valor acordado cliente → Juan Guillermo (COP)" type="number"
+          value={o.pagoJG||""} onChange={e=>upd({pagoJG:e.target.value})} placeholder="0"/>
+        {pagoJG>0&&(
+          <>
+            <div className="flex justify-between text-sm py-1 border-t border-white/5 mt-1">
+              <span className="text-gray-400">Comisión Kaston ({cfg.pctComisionJG}%)</span>
+              <span className="text-orange-400 font-bold">{fmt(comJG)}</span>
             </div>
-
-            {pctCom>0 ? (
-              <>
-                <div className="flex justify-between text-sm py-1 mb-2">
-                  <span className="text-gray-400">Comisión Kaston ({pctCom}%)</span>
-                  <span className="text-orange-400 font-bold">{fmt(montoCom)}</span>
-                </div>
-                {!comRecibida ? (
-                  <div className="rounded-xl p-3 bg-orange-900/30 border border-orange-700/50">
-                    <p className="text-orange-300 text-xs font-bold mb-0.5">⚠ Comisión pendiente de cobrar</p>
-                    <p className="text-orange-200 text-xs mb-3">
-                      {contNombre||"El contratista"} nos debe pagar {fmt(montoCom)} de comisión por esta obra.
-                    </p>
-                    <button onClick={()=>upd({comisionRecibida:true})}
-                      className="w-full py-2 rounded-xl bg-orange-600 text-white text-xs font-bold active:scale-95 transition-transform">
-                      ✓ Marcar como Recibido
-                    </button>
-                  </div>
-                ) : (
-                  <div className="rounded-xl p-3 bg-green-900/30 border border-green-700/50 flex items-center justify-between">
-                    <div>
-                      <p className="text-green-400 text-xs font-bold">✓ Comisión recibida</p>
-                      <p className="text-green-300 text-xs">{fmt(montoCom)}</p>
-                    </div>
-                    <button onClick={()=>upd({comisionRecibida:false})} className="text-xs text-gray-500 underline">Revertir</button>
-                  </div>
-                )}
-              </>
-            ) : contNombre ? (
-              <p className="text-xs text-gray-600 mt-1">Define el % de comisión en Ajustes → Equipo para ver el cálculo automático.</p>
-            ) : null}
-          </div>
+            <AlertaCom nombre="Juan Guillermo" monto={comJG} recibida={o.comJGRecibida||false}
+              onMarcar={()=>upd({comJGRecibida:true})} onRevertir={()=>upd({comJGRecibida:false})}/>
+          </>
         )}
       </div>
 
-      {/* ── PAGOS KASTON ─────────────────────────── */}
-      {ventaTejas>0 && (
-        <>
-          <p className="section-label mb-2">Registro de pagos Kaston</p>
-          {pagosKaston.length>0 && (
-            <div className="card rounded-2xl p-4 mb-3">
-              {pagosKaston.map((p,i)=>(
-                <div key={p.id} className={`pb-3 mb-3 ${i<pagosKaston.length-1?"border-b border-white/5":""}`}>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-400">{p.fecha}</span>
-                    <span className="text-green-400 font-bold">{fmt(p.monto)}</span>
+      {/* Hermilson */}
+      <div className="card rounded-2xl p-4 mb-5">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0"/>
+          <p className="font-bold text-sm">Hermilson</p>
+          <span className="text-xs text-gray-500">— Mampostería y obra civil</span>
+        </div>
+        <Inp label="Valor acordado cliente → Hermilson (COP)" type="number"
+          value={o.pagoHerm||""} onChange={e=>upd({pagoHerm:e.target.value})} placeholder="0"/>
+        {pagoHerm>0&&(
+          <>
+            <div className="flex justify-between text-sm py-1 border-t border-white/5 mt-1">
+              <span className="text-gray-400">Comisión Kaston ({cfg.pctComisionHerm}%)</span>
+              <span className="text-orange-400 font-bold">{fmt(comHerm)}</span>
+            </div>
+            <AlertaCom nombre="Hermilson" monto={comHerm} recibida={o.comHermRecibida||false}
+              onMarcar={()=>upd({comHermRecibida:true})} onRevertir={()=>upd({comHermRecibida:false})}/>
+          </>
+        )}
+      </div>
+
+      {/* ── Sheet: Divisor Automático ──────────────── */}
+      <Sheet open={pagoSh} onClose={()=>{setPagoSh(false);setMontoPago("");}} title="Divisor Automático Kaston">
+        <p className="text-xs text-gray-400 mb-4">
+          Venta total: <strong className="text-white">{fmt(ventaTejas)}</strong> · {Math.round(tejasTotales).toLocaleString()} tejas
+        </p>
+        <Inp label="Monto recibido (COP)" type="number"
+          value={montoPago} onChange={e=>setMontoPago(e.target.value)} placeholder="0"/>
+        {div&&(
+          <>
+            <p className="text-xs text-gray-500 mb-3">{Math.round(div.tejas).toLocaleString()} tejas equivalentes</p>
+            <div className="card rounded-2xl p-4 mb-4">
+              <p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Dispersión automática</p>
+              <div className="flex justify-between text-sm py-2 border-b border-white/5 font-semibold">
+                <span className="text-gray-200">Total recibido</span>
+                <span className="text-white font-bold">{fmt(n(montoPago))}</span>
+              </div>
+              {[
+                {l:"Bolsa Materia Prima",sub:`${Math.round(div.tejas).toLocaleString()} tejas × ${fmt(cfg.costoMaterial)}`,v:div.matPrima,c:"text-yellow-400"},
+                {l:"Bolsa Nómina Trabajador",sub:`× ${fmt(cfg.costoTrabajador)}/teja`,v:div.nomina,c:"text-orange-400"},
+                {l:"Bolsa Costos Fijos",sub:`× ${fmt((cfg.costoArriendo||70)+(cfg.costoLuz||133))}/teja (arr.+luz)`,v:div.costosFijos,c:"text-red-400"},
+              ].map(({l,sub,v,c})=>(
+                <div key={l} className="py-2 border-b border-white/5">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-400">— {l}</span>
+                    <span className={`text-sm font-semibold ${c}`}>{fmt(v)}</span>
                   </div>
-                  {p.desglose && (
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <div className="bg-black/25 rounded-xl p-2">
-                        <p className="text-[9px] text-gray-500 mb-0.5">Mano de obra</p>
-                        <p className="text-xs font-semibold text-orange-400">{fmt(p.desglose.manoObra)}</p>
-                      </div>
-                      <div className="bg-black/25 rounded-xl p-2">
-                        <p className="text-[9px] text-gray-500 mb-0.5">Costos fijos</p>
-                        <p className="text-xs font-semibold text-orange-400">{fmt(p.desglose.costosFijos)}</p>
-                      </div>
-                      <div className="bg-black/25 rounded-xl p-2">
-                        <p className="text-[9px] text-gray-500 mb-0.5">Fondo crecimiento</p>
-                        <p className="text-xs font-semibold text-blue-400">{fmt(p.desglose.inversion)}</p>
-                      </div>
-                      <div className="bg-black/25 rounded-xl p-2">
-                        <p className="text-[9px] text-gray-500 mb-0.5">Utilidad libre</p>
-                        <p className="text-xs font-semibold text-green-400">{fmt(p.desglose.utilLibre)}</p>
-                      </div>
-                    </div>
-                  )}
+                  <p className="text-[10px] text-gray-600">{sub}</p>
                 </div>
               ))}
-            </div>
-          )}
-          <button onClick={()=>setPagoSh(true)}
-            className="btn-primary w-full py-3.5 rounded-2xl font-bold text-sm text-white mb-4">
-            + Registrar pago recibido
-          </button>
-        </>
-      )}
-
-      {/* Sheet divisor */}
-      <Sheet open={pagoSh} onClose={()=>{setPagoSh(false);setMontoPago("");}} title="Divisor Automático Kaston">
-        <p className="text-xs text-gray-400 mb-4">Ingresa el monto recibido y la app lo distribuye automáticamente.</p>
-        <Inp label="Monto recibido del cliente (COP)" type="number"
-          value={montoPago} onChange={e=>setMontoPago(e.target.value)} placeholder="0"/>
-
-        {(parseFloat(montoPago)||0)>0 && (
-          <div className="card rounded-2xl p-4 mb-4">
-            <p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Cómo distribuir este pago</p>
-            <div className="flex justify-between text-sm py-2 border-b border-white/5">
-              <span className="text-gray-200 font-semibold">Total recibido</span>
-              <span className="text-white font-bold">{fmt(parseFloat(montoPago))}</span>
-            </div>
-            <div className="flex justify-between text-sm py-2 border-b border-white/5">
-              <div>
-                <p className="text-gray-400">— Caja Operativa</p>
-                <p className="text-[10px] text-gray-600">Mano de obra fabricante Itagüí ({config.pctManoObra}%)</p>
+              <div className="flex justify-between py-2.5 border-b border-white/5 font-bold">
+                <span className="text-gray-200">= Utilidad Neta</span>
+                <span className={div.utilNeta>=0?"text-green-400":"text-red-400"}>{fmt(div.utilNeta)}</span>
               </div>
-              <span className="text-orange-400 font-semibold self-center">{fmt(div.manoObra)}</span>
-            </div>
-            <div className="flex justify-between text-sm py-2 border-b border-white/5">
-              <div>
-                <p className="text-gray-400">— Fondo Costos Fijos</p>
-                <p className="text-[10px] text-gray-600">Arriendo + luz ({config.pctCostosFijos}%)</p>
+              <div className="py-2 border-b border-white/5">
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-400">— Fondo de Crecimiento</span>
+                  <span className="text-sm font-semibold text-blue-400">{fmt(div.inversion)}</span>
+                </div>
+                <p className="text-[10px] text-gray-600">{cfg.pctInversion}% de la utilidad neta — no se toca</p>
               </div>
-              <span className="text-orange-400 font-semibold self-center">{fmt(div.costosFijos)}</span>
-            </div>
-            <div className="flex justify-between text-sm py-2.5 border-b border-white/5 font-bold">
-              <span className="text-gray-200">= Utilidad Neta</span>
-              <span className={div.utilNeta>=0?"text-green-400":"text-red-400"}>{fmt(div.utilNeta)}</span>
-            </div>
-            <div className="flex justify-between text-sm py-2 border-b border-white/5">
-              <div>
-                <p className="text-gray-400">— Fondo de Crecimiento</p>
-                <p className="text-[10px] text-gray-600">{config.pctInversion}% de la utilidad neta — no se toca</p>
+              <div className="flex justify-between py-3 font-black text-base">
+                <span className="text-white">= Utilidad Libre</span>
+                <span className={div.utilLibre>=0?"text-green-400":"text-red-400"}>{fmt(div.utilLibre)}</span>
               </div>
-              <span className="text-blue-400 font-semibold self-center">{fmt(div.inversion)}</span>
             </div>
-            <div className="flex justify-between text-base py-2.5 font-black">
-              <span className="text-white">= Utilidad Libre</span>
-              <span className="text-green-400">{fmt(div.utilLibre)}</span>
-            </div>
-          </div>
+          </>
         )}
-        <PBtn onClick={registrarPago} disabled={!(parseFloat(montoPago)>0)}>Confirmar y registrar</PBtn>
+        <PBtn onClick={registrarPago} disabled={!div}>Confirmar y dispersar</PBtn>
       </Sheet>
     </div>
   );
 }
 
 // ── ProyectosTab ─────────────────────────────────────────────
-function ProyectosTab({obras,saveObras,clientes,comisiones,config,caja,saveCaja}) {
-  const [vista,setVista]     = useState("lista");
-  const [obraId,setObraId]   = useState(null);
-  const [sh,setSh]           = useState(false);
-  const blank = {nombre:"",cliente:"",direccion:"",estado:"Por iniciar",notas:""};
-  const [f,setF] = useState(blank);
-  const upd = k => e => setF({...f,[k]:e.target.value});
+function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
+  const [vista,setVista]=useState("lista");
+  const [obraId,setObraId]=useState(null);
+  const [sh,setSh]=useState(false);
+  const blank={nombre:"",cliente:"",direccion:"",m2:"",tipoContrato:"Solo Teja",estado:"Por iniciar",notas:""};
+  const [f,setF]=useState(blank);
+  const upd=k=>e=>setF({...f,[k]:e.target.value});
+  const cfg={...DEF_CFG,...config};
 
-  const openForm = (o=null) => { setF(o ? {nombre:o.nombre,cliente:o.cliente||"",direccion:o.direccion||"",estado:o.estado||"Por iniciar",notas:o.notas||"",id:o.id} : blank); setSh(true); };
-  const guardar = () => {
+  const openForm=o=>{
+    setF(o?{id:o.id,nombre:o.nombre||"",cliente:o.cliente||"",direccion:o.direccion||"",
+      m2:o.m2||"",tipoContrato:getTipo(o),estado:o.estado||"Por iniciar",notas:o.notas||""}:blank);
+    setSh(true);
+  };
+
+  const guardar=()=>{
     if(!f.nombre.trim()) return;
     if(f.id) saveObras(obras.map(o=>o.id===f.id?{...o,...f}:o));
-    else     saveObras([{...f,id:uid(),fecha:hoy(),ventaTejas:"",favorMateriales:false,fondoMateriales:"",listaCompras:[],contratoInstalador:"",pagoDirectoInstalador:"",comisionRecibida:false,pagosKaston:[]},...obras]);
+    else saveObras([{...f,id:uid(),fecha:hoy(),
+      suministrarMallas:false,listaCompras:[],mallasRegistradas:false,
+      favorActivo:false,fondoFavores:"",listaFavores:[],
+      pagoJG:"",pagoHerm:"",comJGRecibida:false,comHermRecibida:false,
+      pagosKaston:[]},...obras]);
     setSh(false);
   };
-  const del = () => { saveObras(obras.filter(o=>o.id!==f.id)); setSh(false); };
+  const del=()=>{saveObras(obras.filter(o=>o.id!==f.id));setSh(false);};
 
-  const abrirDetalle = o => { setObraId(o.id); setVista("detalle"); };
-
-  if(vista==="detalle" && obraId) return (
+  if(vista==="detalle"&&obraId) return(
     <ProyectoDetalle obraId={obraId} obras={obras} saveObras={saveObras}
-      comisiones={comisiones} config={config} caja={caja} saveCaja={saveCaja}
-      onBack={()=>{ setVista("lista"); setObraId(null); }}/>
+      config={config} caja={caja} saveCaja={saveCaja}
+      onBack={()=>{setVista("lista");setObraId(null);}}/>
   );
 
-  const resumen = o => {
-    const venta     = parseFloat(o.ventaTejas)||0;
-    const cobrado   = (o.pagosKaston||[]).reduce((s,p)=>s+(parseFloat(p.monto)||0),0);
-    const comPend   = (parseFloat(o.pagoDirectoInstalador)||0)>0 &&
-                      (parseFloat(comisiones[o.contratoInstalador||""])||0)>0 &&
-                      !o.comisionRecibida;
-    const matActivo = o.favorMateriales;
-    const faltaComp = (o.listaCompras||[]).some(i=>!i.comprado);
-    return {venta, cobrado, pendiente:Math.max(0,venta-cobrado), comPend, matActivo, faltaComp};
+  const resumen=o=>{
+    const m2=n(o.m2);
+    const venta=m2*getPrecioM2(o,cfg);
+    const cobrado=(o.pagosKaston||[]).reduce((s,p)=>s+n(p.monto),0);
+    const comJGPend=n(o.pagoJG)>0&&(cfg.pctComisionJG||0)>0&&!o.comJGRecibida;
+    const comHPend =n(o.pagoHerm)>0&&(cfg.pctComisionHerm||0)>0&&!o.comHermRecibida;
+    return {venta,cobrado,pendiente:Math.max(0,venta-cobrado),comPend:comJGPend||comHPend};
   };
 
-  return (
+  return(
     <div className="p-4">
       <div className="flex justify-end mb-4">
         <button onClick={()=>openForm()} className="btn-primary w-10 h-10 rounded-full flex items-center justify-center font-bold text-xl text-white">+</button>
       </div>
-      {obras.length===0 && <p className="text-gray-500 text-center mt-16 text-sm">Sin proyectos. Toca + para crear uno.</p>}
+      {obras.length===0&&<p className="text-gray-500 text-center mt-16 text-sm">Sin proyectos. Toca + para crear uno.</p>}
       {obras.map(o=>{
-        const r = resumen(o);
-        return (
-          <div key={o.id} className="card card-hover rounded-2xl p-4 mb-3 cursor-pointer" onClick={()=>abrirDetalle(o)}>
+        const r=resumen(o);
+        return(
+          <div key={o.id} className="card card-hover rounded-2xl p-4 mb-3 cursor-pointer" onClick={()=>{setObraId(o.id);setVista("detalle");}}>
             <div className="flex justify-between items-start mb-1">
               <p className="font-semibold flex-1 pr-2">{o.nombre}</p>
               <div className="flex items-center gap-1.5">
-                {r.comPend && <span className="w-2 h-2 rounded-full bg-orange-500 flex-shrink-0 animate-pulse"/>}
+                {r.comPend&&<span className="w-2 h-2 rounded-full bg-orange-500 pulse flex-shrink-0"/>}
                 <Badge s={o.estado||"Por iniciar"}/>
               </div>
             </div>
-            {o.cliente && <p className="text-sm text-gray-400">Cliente: {o.cliente}</p>}
-            {o.direccion && <p className="text-xs text-gray-500">{o.direccion}</p>}
-            {r.venta>0 && (
-              <div className="mt-2 flex gap-3">
-                <div>
-                  <p className="text-[9px] text-gray-500 uppercase">Venta Kaston</p>
-                  <p className="text-xs font-semibold text-white">{fmt(r.venta)}</p>
-                </div>
-                <div>
-                  <p className="text-[9px] text-gray-500 uppercase">Cobrado</p>
-                  <p className={`text-xs font-semibold ${r.cobrado>=r.venta?"text-green-400":"text-white"}`}>{fmt(r.cobrado)}</p>
-                </div>
-                {r.pendiente>0 && (
-                  <div>
-                    <p className="text-[9px] text-gray-500 uppercase">Pendiente</p>
-                    <p className="text-xs font-semibold text-orange-400">{fmt(r.pendiente)}</p>
-                  </div>
-                )}
+            {o.cliente&&<p className="text-sm text-gray-400">Cliente: {o.cliente}</p>}
+            {n(o.m2)>0&&(
+              <div className="mt-2 flex gap-3 flex-wrap">
+                <div><p className="text-[9px] text-gray-500 uppercase">Venta</p><p className="text-xs font-semibold text-white">{fmt(r.venta)}</p></div>
+                <div><p className="text-[9px] text-gray-500 uppercase">Cobrado</p><p className={`text-xs font-semibold ${r.cobrado>=r.venta&&r.venta>0?"text-green-400":"text-white"}`}>{fmt(r.cobrado)}</p></div>
+                {r.pendiente>0&&<div><p className="text-[9px] text-gray-500 uppercase">Pendiente</p><p className="text-xs font-semibold text-orange-400">{fmt(r.pendiente)}</p></div>}
               </div>
             )}
-            <div className="mt-2 flex gap-2 flex-wrap">
-              {r.comPend && <span className="text-[10px] text-orange-400">⚠ Comisión por cobrar</span>}
-              {r.matActivo && r.faltaComp && <span className="text-[10px] text-yellow-400">🛒 Materiales pendientes</span>}
+            <div className="mt-2 flex gap-2 items-center flex-wrap">
+              <span className="text-[10px] text-gray-600">{getTipo(o)}</span>
+              {n(o.m2)>0&&<span className="text-[10px] text-gray-600">· {o.m2} m²</span>}
+              {r.comPend&&<span className="text-[10px] text-orange-400">⚠ Comisión pendiente</span>}
             </div>
-            <button onClick={e=>{e.stopPropagation();openForm(o);}}
-              className="mt-2 text-[10px] text-gray-600 underline">Editar datos básicos</button>
+            <button onClick={e=>{e.stopPropagation();openForm(o);}} className="mt-2 text-[10px] text-gray-600 underline">Editar datos</button>
           </div>
         );
       })}
+
       <Sheet open={sh} onClose={()=>setSh(false)} title={f.id?"Editar proyecto":"Nuevo proyecto"}>
         <Inp label="Nombre del proyecto *" value={f.nombre} onChange={upd("nombre")} placeholder="Ej: Cubierta Casa García"/>
         <div className="mb-3">
           <label className="block text-xs text-gray-400 mb-1">Cliente</label>
-          <input list="lstCli" className={ic} value={f.cliente} onChange={upd("cliente")} placeholder="Nombre del cliente"/>
-          <datalist id="lstCli">{clientes.map(c=><option key={c.id||c.nombre} value={c.nombre}/>)}</datalist>
+          <input list="lstC" className={ic} value={f.cliente} onChange={upd("cliente")} placeholder="Nombre del cliente"/>
+          <datalist id="lstC">{clientes.map(c=><option key={c.id||c.nombre} value={c.nombre}/>)}</datalist>
         </div>
         <Inp label="Dirección" value={f.direccion} onChange={upd("direccion")} placeholder="Dirección de la obra"/>
+        <Inp label="Metros cuadrados (m²)" type="number" value={f.m2} onChange={upd("m2")} placeholder="0"/>
+        <div className="mb-4">
+          <label className="block text-xs text-gray-400 mb-2">Tipo de contrato</label>
+          <div className="flex gap-2">
+            {[{v:"Solo Teja",p:85000},{v:"Todo Costo",p:106623}].map(({v,p})=>(
+              <button key={v} onClick={()=>setF({...f,tipoContrato:v})}
+                className={`flex-1 py-3 rounded-xl text-sm font-semibold border-2 transition ${f.tipoContrato===v?"border-orange-400 bg-orange-600/20 text-orange-300":"border-gray-700 bg-gray-800 text-gray-400"}`}>
+                <p>{v}</p>
+                <p className="text-xs font-normal opacity-75">{fmt(p)}/m²</p>
+              </button>
+            ))}
+          </div>
+        </div>
         <Sel label="Estado" opts={["Por iniciar","En curso","Terminada","Cotizado","Perdido"]} value={f.estado||"Por iniciar"} onChange={upd("estado")}/>
         <Txt label="Notas" value={f.notas||""} onChange={upd("notas")} placeholder="Detalles adicionales..."/>
         <PBtn onClick={guardar}>{f.id?"Guardar cambios":"Crear proyecto"}</PBtn>
-        {f.id && <PBtn danger onClick={del}>Eliminar proyecto</PBtn>}
+        {f.id&&<PBtn danger onClick={del}>Eliminar proyecto</PBtn>}
       </Sheet>
     </div>
   );
 }
 
 // ── ComisionesTab ─────────────────────────────────────────────
-function ComisionesTab({obras,saveObras,comisiones}) {
-  const calcMonto = o => {
-    const pago = parseFloat(o.pagoDirectoInstalador)||0;
-    const pct  = parseFloat(comisiones[o.contratoInstalador||""])||0;
-    return pago*pct/100;
-  };
-  const tieneComision = o => calcMonto(o)>0;
-  const pendientes = obras.filter(o=>tieneComision(o)&&!o.comisionRecibida);
-  const recibidas  = obras.filter(o=>tieneComision(o)&&o.comisionRecibida);
-  const totalPend  = pendientes.reduce((s,o)=>s+calcMonto(o),0);
+function ComisionesTab({obras,saveObras,config}){
+  const cfg={...DEF_CFG,...config};
+  const items=[];
+  obras.forEach(o=>{
+    const jg  =n(o.pagoJG)  *(cfg.pctComisionJG  ||0)/100;
+    const herm=n(o.pagoHerm)*(cfg.pctComisionHerm||0)/100;
+    if(jg>0)   items.push({key:o.id+"-jg",  obraId:o.id,obra:o.nombre,quien:"Juan Guillermo",pago:n(o.pagoJG),  pct:cfg.pctComisionJG,  monto:jg,  recibida:o.comJGRecibida  ||false,campo:"comJGRecibida"});
+    if(herm>0) items.push({key:o.id+"-herm",obraId:o.id,obra:o.nombre,quien:"Hermilson",     pago:n(o.pagoHerm),pct:cfg.pctComisionHerm,monto:herm,recibida:o.comHermRecibida||false,campo:"comHermRecibida"});
+  });
+  const pend=items.filter(i=>!i.recibida);
+  const rec =items.filter(i=>i.recibida);
+  const total=pend.reduce((s,i)=>s+i.monto,0);
+  const marcar  =item=>saveObras(obras.map(o=>o.id===item.obraId?{...o,[item.campo]:true}:o));
+  const revertir=item=>saveObras(obras.map(o=>o.id===item.obraId?{...o,[item.campo]:false}:o));
 
-  const marcar   = o => saveObras(obras.map(x=>x.id===o.id?{...x,comisionRecibida:true}:x));
-  const revertir = o => saveObras(obras.map(x=>x.id===o.id?{...x,comisionRecibida:false}:x));
-
-  const FilaComision = ({o,recibida=false}) => {
-    const pago  = parseFloat(o.pagoDirectoInstalador)||0;
-    const pct   = parseFloat(comisiones[o.contratoInstalador||""])||0;
-    const monto = pago*pct/100;
-    return (
-      <div className={`card rounded-2xl p-4 mb-3 ${recibida?"opacity-50":""}`}>
-        <div className="flex justify-between items-start mb-1">
-          <div className="flex-1 min-w-0 pr-3">
-            <p className="font-semibold text-sm truncate">{o.nombre}</p>
-            <p className="text-xs text-gray-500">{o.contratoInstalador} · {pct}% de {fmt(pago)}</p>
-            {o.cliente && <p className="text-xs text-gray-600">Cliente: {o.cliente}</p>}
-          </div>
-          <span className={`text-lg font-black flex-shrink-0 ${recibida?"text-gray-500":"text-orange-400"}`}>{fmt(monto)}</span>
+  const Fila=({item,recibida=false})=>(
+    <div className={`card rounded-2xl p-4 mb-3 ${recibida?"opacity-50":""}`}>
+      <div className="flex justify-between items-start mb-1">
+        <div className="flex-1 min-w-0 pr-3">
+          <p className="font-semibold text-sm">{item.obra}</p>
+          <p className="text-xs text-gray-500">{item.quien} · {item.pct}% de {fmt(item.pago)}</p>
         </div>
-        {!recibida ? (
-          <button onClick={()=>marcar(o)}
-            className="mt-2 w-full py-2 rounded-xl bg-orange-700 text-white text-xs font-bold active:scale-95 transition-transform">
-            ✓ Marcar como Recibido
-          </button>
-        ) : (
-          <button onClick={()=>revertir(o)} className="mt-1 text-xs text-gray-600 underline">Revertir</button>
-        )}
+        <span className={`text-xl font-black flex-shrink-0 ${recibida?"text-gray-500":"text-orange-400"}`}>{fmt(item.monto)}</span>
       </div>
-    );
-  };
+      {!recibida?(
+        <button onClick={()=>marcar(item)}
+          className="mt-2 w-full py-2 rounded-xl bg-orange-700 text-white text-xs font-bold active:scale-95 transition-transform">
+          ✓ Marcar como Recibido
+        </button>
+      ):(
+        <button onClick={()=>revertir(item)} className="mt-1 text-xs text-gray-600 underline">Revertir</button>
+      )}
+    </div>
+  );
 
-  return (
-    <div className="p-4" style={{paddingBottom:"calc(env(safe-area-inset-bottom) + 96px)"}}>
-      {totalPend>0 && (
-        <div className="card rounded-2xl p-4 mb-5" style={{borderColor:"rgba(234,88,12,0.35)"}}>
-          <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Total pendiente de cobrar</p>
-          <p className="text-3xl font-black text-orange-400">{fmt(totalPend)}</p>
-          <p className="text-xs text-gray-500 mt-1">{pendientes.length} obra{pendientes.length!==1?"s":""} con comisión pendiente</p>
+  return(
+    <div className="p-4" style={{paddingBottom:"calc(env(safe-area-inset-bottom)+96px)"}}>
+      {total>0&&(
+        <div className="card rounded-2xl p-5 mb-5 text-center" style={{borderColor:"rgba(234,88,12,0.4)"}}>
+          <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Total Comisiones por Recibir</p>
+          <p className="text-4xl font-black text-orange-400">{fmt(total)}</p>
+          <p className="text-xs text-gray-500 mt-1">{pend.length} comisión{pend.length!==1?"es":""} pendiente{pend.length!==1?"s":""}</p>
         </div>
       )}
-      {pendientes.length===0&&recibidas.length===0 && (
+      {items.length===0&&(
         <div className="text-center mt-20">
-          <p className="text-gray-500 text-sm mb-2">Sin comisiones registradas.</p>
-          <p className="text-xs text-gray-600">Entra a un proyecto, agrega el pago del instalador y define el % de comisión en Ajustes.</p>
+          <p className="text-gray-500 text-sm">Sin comisiones registradas.</p>
+          <p className="text-xs text-gray-600 mt-1">Entra a un proyecto y completa los valores acordados con los contratistas.</p>
         </div>
       )}
-      {pendientes.length>0 && (
-        <>
-          <p className="section-label mb-3">Por cobrar</p>
-          {pendientes.map(o=><FilaComision key={o.id} o={o}/>)}
-        </>
-      )}
-      {recibidas.length>0 && (
-        <>
-          <p className="section-label mb-3 mt-5">Ya recibidas</p>
-          {recibidas.map(o=><FilaComision key={o.id} o={o} recibida/>)}
-        </>
-      )}
+      {pend.length>0&&<><p className="section-label mb-3">Por cobrar</p>{pend.map(i=><Fila key={i.key} item={i}/>)}</>}
+      {rec.length>0&&<><p className="section-label mb-3 mt-4">Ya recibidas</p>{rec.map(i=><Fila key={i.key} item={i} recibida/>)}</>}
     </div>
   );
 }
 
 // ── CajaTab ───────────────────────────────────────────────────
-function CajaTab({caja,saveCaja}) {
-  const [sh,setSh] = useState(false);
-  const blankG = {concepto:"",monto:"",categoria:"arriendo",fecha:new Date().toISOString().slice(0,10)};
-  const [f,setF] = useState(blankG);
-  const upd = k => e => setF({...f,[k]:e.target.value});
+function CajaTab({caja,saveCaja}){
+  const [sh,setSh]=useState(false);
+  const blank={concepto:"",monto:"",deBolsa:"nomina",fecha:new Date().toISOString().slice(0,10)};
+  const [f,setF]=useState(blank);
+  const upd=k=>e=>setF({...f,[k]:e.target.value});
+  const b=calcBolsas(caja);
 
-  const ingresos  = caja.filter(e=>e.tipo==="ingreso").reduce((s,e)=>s+(parseFloat(e.monto)||0),0);
-  const gastos    = caja.filter(e=>e.tipo==="gasto").reduce((s,e)=>s+(parseFloat(e.monto)||0),0);
-  const inversion = caja.filter(e=>e.tipo==="inversion").reduce((s,e)=>s+(parseFloat(e.monto)||0),0);
-  const libre     = ingresos - gastos - inversion;
-
-  const guardarGasto = () => {
-    const m = parseFloat(f.monto)||0;
+  const guardar=()=>{
+    const m=n(f.monto);
     if(!f.concepto.trim()||!m) return;
-    saveCaja(prev=>[...prev,{...f,id:uid(),monto:m,tipo:"gasto",manual:true}]);
-    setF(blankG); setSh(false);
+    saveCaja(prev=>[...prev,{...f,id:uid(),monto:m,tipo:"gastoManual",manual:true}]);
+    setF(blank); setSh(false);
   };
-  const del = id => saveCaja(caja.filter(e=>e.id!==id));
+  const del=id=>saveCaja(caja.filter(e=>e.id!==id));
+  const recientes=[...caja].sort((a,bx)=>(bx.fecha||"").localeCompare(a.fecha||"")).slice(0,30);
 
-  const recientes = [...caja].sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")).slice(0,25);
-  const tipoColor = {ingreso:"text-green-400",gasto:"text-red-400",inversion:"text-blue-400"};
-  const tipoSigil = {ingreso:"+",gasto:"–",inversion:"–"};
+  const tipoLabel={matPrima:"Mat. Prima",nomina:"Nómina",costosFijos:"C. Fijos",
+    inversion:"Fondo Crec.",utilLibre:"Utilidad",mallas:"Mallas",gastoManual:"Gasto",ingreso:"Ingreso"};
+  const tipoColor={matPrima:"text-yellow-400",nomina:"text-orange-400",costosFijos:"text-red-400",
+    inversion:"text-blue-400",utilLibre:"text-green-400",mallas:"text-green-400",
+    gastoManual:"text-red-500",ingreso:"text-green-300"};
 
-  return (
-    <div className="p-4" style={{paddingBottom:"calc(env(safe-area-inset-bottom) + 96px)"}}>
-      {/* Estado de caja */}
-      <div className="card rounded-2xl p-4 mb-4">
-        <p className="section-label mb-3">Estado de caja</p>
-        <div className="flex justify-between text-sm py-1.5 border-b border-white/5">
-          <span className="text-gray-300">Ingresos por tejas</span>
-          <span className="text-green-400 font-semibold">{fmt(ingresos)}</span>
-        </div>
-        <div className="flex justify-between text-sm py-1.5 border-b border-white/5">
-          <span className="text-gray-300">Gastos operativos</span>
-          <span className="text-red-400">{fmt(gastos)}</span>
-        </div>
-        <div className="flex justify-between text-sm py-1.5 border-b border-white/5">
-          <span className="text-gray-300">Fondo de Crecimiento (apartado)</span>
-          <span className="text-blue-400">{fmt(inversion)}</span>
-        </div>
-        <div className="flex justify-between text-lg font-black pt-3 mt-1">
-          <span>Disponible</span>
-          <span className={libre>=0?"text-green-400":"text-red-400"}>{fmt(libre)}</span>
-        </div>
+  const BOLSAS_DETALLE=[
+    {k:"matPrima",   l:"Bolsa Materia Prima",  sub:"Polímero",           c:"text-yellow-400",bg:"bg-yellow-900/20",bc:"border-yellow-700/30"},
+    {k:"nomina",     l:"Bolsa Nómina",         sub:"Trabajador Itagüí",  c:"text-orange-400",bg:"bg-orange-900/20",bc:"border-orange-700/30"},
+    {k:"costosFijos",l:"Bolsa Costos Fijos",   sub:"Arriendo + Luz",     c:"text-red-400",   bg:"bg-red-900/20",   bc:"border-red-700/30"},
+  ];
+
+  return(
+    <div className="p-4" style={{paddingBottom:"calc(env(safe-area-inset-bottom)+96px)"}}>
+      {/* Balance disponible */}
+      <div className="rounded-2xl p-5 mb-4 text-center"
+        style={{background:"linear-gradient(135deg,#081a0e,#0d2e16)",border:"1px solid rgba(34,197,94,0.2)"}}>
+        <p className="text-xs text-green-400 uppercase tracking-widest mb-1">Balance Disponible</p>
+        <p className={`text-4xl font-black ${b.disponible>=0?"text-green-200":"text-red-400"}`}>{fmt(b.disponible)}</p>
+        <p className="text-xs text-green-900 mt-1">Utilidad libre acumulada</p>
       </div>
 
-      {/* Fondo de crecimiento */}
-      {inversion>0 && (
-        <div className="rounded-2xl p-4 mb-4" style={{background:"linear-gradient(135deg,#0b1d3e,#091428)",border:"1px solid rgba(59,130,246,0.2)"}}>
-          <p className="text-[10px] text-blue-400 uppercase tracking-widest mb-1">Fondo de Crecimiento / Futura Maquinaria</p>
-          <p className="text-3xl font-black text-blue-200">{fmt(inversion)}</p>
-          <p className="text-xs text-blue-600 mt-1">Esta plata no se toca — se acumula automáticamente</p>
-        </div>
-      )}
+      {/* Bolsas reservadas */}
+      <p className="section-label mb-3">Bolsas Reservadas</p>
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        {BOLSAS_DETALLE.map(({k,l,sub,c,bg,bc})=>(
+          <div key={k} className={`rounded-2xl p-3 ${bg} border ${bc}`}>
+            <p className="text-[9px] text-gray-400 uppercase leading-tight mb-0.5">{l}</p>
+            <p className="text-[9px] text-gray-600 mb-1">{sub}</p>
+            <p className={`text-sm font-black ${c}`}>{fmt(b[k])}</p>
+          </div>
+        ))}
+      </div>
 
-      {/* Registrar gasto manual */}
+      {/* Fondo de Crecimiento */}
+      <div className="rounded-2xl p-4 mb-4"
+        style={{background:"linear-gradient(135deg,#0a1930,#091228)",border:"1px solid rgba(59,130,246,0.25)"}}>
+        <p className="text-[10px] text-blue-400 uppercase tracking-widest mb-0.5">Fondo de Crecimiento / Futura Maquinaria</p>
+        <p className="text-3xl font-black text-blue-100">{fmt(b.inversion)}</p>
+        <p className="text-xs text-blue-800 mt-1">Esta plata no se toca — se acumula con cada venta</p>
+      </div>
+
+      {/* Registrar gasto */}
       <div className="flex justify-between items-center mb-3">
-        <p className="section-label">Registrar gasto (arriendo, luz, nómina)</p>
+        <div>
+          <p className="section-label">Registrar pago desde bolsa</p>
+          <p className="text-[10px] text-gray-600 mt-0.5">Arriendo, luz, nómina…</p>
+        </div>
         <button onClick={()=>setSh(true)}
-          className="btn-primary w-9 h-9 rounded-full flex items-center justify-center font-bold text-lg text-white flex-shrink-0 ml-2">+</button>
+          className="btn-primary w-10 h-10 rounded-full flex items-center justify-center font-bold text-xl text-white flex-shrink-0">+</button>
       </div>
 
       {/* Movimientos */}
-      {recientes.length>0 && (
+      {recientes.length>0&&(
         <div className="card rounded-2xl p-4 mb-4">
           <p className="text-xs text-gray-400 uppercase tracking-wider mb-3">Movimientos recientes</p>
           {recientes.map(e=>(
             <div key={e.id} className="flex items-center gap-2 py-2 border-b border-white/5 last:border-0">
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-gray-200 truncate">{e.concepto}</p>
-                <p className="text-xs text-gray-600">{e.fecha}{e.obraId?" · obra":""}</p>
+                <p className="text-xs text-gray-600">{e.fecha} · <span className={tipoColor[e.tipo]||"text-gray-500"}>{tipoLabel[e.tipo]||e.tipo}</span></p>
               </div>
-              <span className={`text-sm font-semibold flex-shrink-0 ${tipoColor[e.tipo]||"text-gray-400"}`}>
-                {tipoSigil[e.tipo]}{fmt(e.monto)}
+              <span className={`text-sm font-semibold flex-shrink-0 ${e.tipo==="gastoManual"?"text-red-400":tipoColor[e.tipo]||"text-gray-400"}`}>
+                {e.tipo==="gastoManual"?"–":"+"}{ fmt(e.monto)}
               </span>
-              {e.manual && (
-                <button onClick={()=>del(e.id)} className="text-red-600 text-lg leading-none ml-1 flex-shrink-0">×</button>
-              )}
+              {e.manual&&<button onClick={()=>del(e.id)} className="text-red-600 text-xl ml-1 flex-shrink-0 leading-none">×</button>}
             </div>
           ))}
         </div>
       )}
-      {caja.length===0 && (
-        <p className="text-gray-600 text-sm text-center mt-10">Sin movimientos aún. Los pagos de tejas aparecen aquí al registrarlos en cada proyecto.</p>
-      )}
+      {caja.length===0&&<p className="text-gray-600 text-sm text-center mt-12">Sin movimientos. Los pagos aparecen aquí al registrarlos en cada proyecto.</p>}
 
-      <Sheet open={sh} onClose={()=>setSh(false)} title="Registrar gasto">
-        <Inp label="Concepto *" value={f.concepto} onChange={upd("concepto")} placeholder="Arriendo bodega, recibo luz, nómina..."/>
+      <Sheet open={sh} onClose={()=>setSh(false)} title="Registrar Pago desde Bolsa">
+        <p className="text-xs text-gray-400 mb-4">Cuando pagues efectivamente el arriendo, la luz o al trabajador, registra aquí para descontar de la bolsa correspondiente.</p>
+        <Inp label="Concepto *" value={f.concepto} onChange={upd("concepto")} placeholder="Arriendo enero, nómina febrero…"/>
         <Inp label="Monto (COP)" type="number" value={f.monto} onChange={upd("monto")} placeholder="0"/>
-        <Sel label="Categoría" opts={["arriendo","luz","nomina","otro"]} value={f.categoria} onChange={upd("categoria")}/>
+        <div className="mb-4">
+          <label className="block text-xs text-gray-400 mb-2">Descontar de bolsa</label>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              {v:"nomina",      l:"Nómina Trabajador"},
+              {v:"costosFijos", l:"Costos Fijos (arr+luz)"},
+              {v:"matPrima",    l:"Materia Prima"},
+              {v:"inversion",   l:"Fondo Crecimiento"},
+              {v:"disponible",  l:"Balance Disponible"},
+            ].map(({v,l})=>(
+              <button key={v} onClick={()=>setF({...f,deBolsa:v})}
+                className={`py-2 px-3 rounded-xl text-xs font-semibold border-2 transition ${f.deBolsa===v?"border-orange-400 bg-orange-600/20 text-orange-300":"border-gray-700 bg-gray-800 text-gray-400"}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
         <Inp label="Fecha" type="date" value={f.fecha} onChange={upd("fecha")}/>
-        <PBtn onClick={guardarGasto}>Registrar gasto</PBtn>
+        <PBtn onClick={guardar}>Registrar gasto</PBtn>
       </Sheet>
     </div>
   );
 }
 
 // ── ConfigSheet ───────────────────────────────────────────────
-function ConfigSheet({open,onClose,config,saveConfig,equipo,saveEquipo,comisiones,saveComisiones,clientes,obras,gastos,tareas,eventos}) {
-  const [nuevoEq,setNuevoEq] = useState("");
-  const setCfg = (k,v) => saveConfig({...config,[k]:parseFloat(v)||0});
-  const setCom = (n,v) => saveComisiones({...comisiones,[n]:parseFloat(v)||0});
-  const agregarEq = () => { const n=nuevoEq.trim(); if(!n||equipo.includes(n)) return; saveEquipo([...equipo,n]); setNuevoEq(""); };
+function ConfigSheet({open,onClose,config,saveConfig,obras,clientes}){
+  const cfg={...DEF_CFG,...config};
+  const setCfg=(k,v)=>saveConfig({...cfg,[k]:parseFloat(v)||0});
+  const costoTotal=(cfg.costoMaterial||0)+(cfg.costoTrabajador||0)+(cfg.costoArriendo||0)+(cfg.costoLuz||0);
+  const margenSoloTeja=cfg.precioSoloTejaM2/TEJAS_M2-costoTotal;
 
-  const pctTotal = (config.pctManoObra||0)+(config.pctCostosFijos||0);
-
-  return (
+  return(
     <Sheet open={open} onClose={onClose} title="Ajustes Kaston">
-      {/* Divisor automático */}
-      <p className="section-label mb-2">Divisor automático</p>
-      <p className="text-xs text-gray-500 mb-3">Porcentajes que se aplican a cada pago de tejas al registrarlo.</p>
+      {/* Costos por teja */}
+      <p className="section-label mb-1">Costos base por teja</p>
+      <p className="text-xs text-gray-500 mb-3">1 m² = {TEJAS_M2} tejas · Rendimiento fijo</p>
       <div className="card rounded-2xl p-4 mb-4">
         {[
-          {label:"Caja Operativa — Mano de obra fabricante",key:"pctManoObra",sub:"Trabajador en Itagüí"},
-          {label:"Fondo Costos Fijos",key:"pctCostosFijos",sub:"Arriendo bodega + luz"},
-        ].map(({label,key,sub})=>(
-          <div key={key} className="flex items-center gap-3 mb-3">
+          {k:"costoMaterial",   l:"Polímero — Materia Prima",         def:600},
+          {k:"costoTrabajador", l:"Trabajador Saca-tejas (nómina)",   def:270},
+          {k:"costoArriendo",   l:"Arriendo bodega (prorrateado)",    def:70},
+          {k:"costoLuz",        l:"Luz bodega (prorrateada)",         def:133},
+        ].map(({k,l,def})=>(
+          <div key={k} className="flex items-center gap-3 mb-3">
             <div className="flex-1">
-              <p className="text-sm text-gray-200">{label}</p>
-              <p className="text-xs text-gray-600">{sub}</p>
+              <p className="text-sm text-gray-200">{l}</p>
+              <p className="text-[10px] text-gray-600">Default: ${def.toLocaleString("es-CO")}/teja</p>
             </div>
-            <input type="number" min="0" max="100"
-              className="w-16 bg-black/30 rounded-xl px-2 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
-              value={config[key]||""} onChange={e=>setCfg(key,e.target.value)}/>
-            <span className="text-gray-400 text-sm w-4">%</span>
+            <div className="flex items-center gap-1">
+              <span className="text-gray-500 text-xs">$</span>
+              <input type="number" min="0"
+                className="w-20 bg-black/30 rounded-xl px-2 py-1.5 text-white text-sm text-right outline-none focus:ring-1 focus:ring-orange-500"
+                value={cfg[k]||""} onChange={e=>setCfg(k,e.target.value)}/>
+            </div>
           </div>
         ))}
-        {pctTotal>0 && (
-          <div className="border-t border-white/5 pt-2 mb-3">
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>Subtotal costos ({pctTotal}%) → Utilidad Neta = {100-pctTotal}%</span>
+        <div className="border-t border-white/5 pt-2 space-y-1">
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-300 font-semibold">Costo fijo total / teja</span>
+            <span className="text-orange-400 font-bold">{fmt(costoTotal)}</span>
+          </div>
+          {margenSoloTeja>0&&(
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">Margen neto Solo Teja / teja</span>
+              <span className="text-green-400">{fmt(margenSoloTeja)}</span>
             </div>
-          </div>
-        )}
-        <div className="flex items-center gap-3">
-          <div className="flex-1">
-            <p className="text-sm text-gray-200">Fondo de Crecimiento</p>
-            <p className="text-xs text-gray-600">% sobre la utilidad neta — se aparta solo</p>
-          </div>
-          <input type="number" min="0" max="100"
-            className="w-16 bg-black/30 rounded-xl px-2 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
-            value={config.pctInversion||""} onChange={e=>setCfg("pctInversion",e.target.value)}/>
-          <span className="text-gray-400 text-sm w-4">%</span>
+          )}
         </div>
       </div>
 
-      {/* Equipo y comisiones */}
-      <p className="section-label mb-2">Equipo y % de comisión para Kaston</p>
-      <p className="text-xs text-gray-500 mb-3">El % que le cobras al contratista por presentarle cada cliente.</p>
-      <div className="mb-4">
-        {equipo.map(e=>(
-          <div key={e} className="card rounded-2xl px-4 py-3 mb-2 flex items-center gap-3">
-            <span className="text-sm flex-1">{e}</span>
-            <input type="number" min="0" max="100" placeholder="0"
-              className="w-16 bg-black/30 rounded-xl px-3 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
-              value={comisiones[e]||""} onChange={ev=>setCom(e,ev.target.value)}/>
-            <span className="text-gray-400 text-sm">%</span>
-            <button onClick={()=>saveEquipo(equipo.filter(x=>x!==e))} className="text-red-400 text-xl leading-none pl-2">×</button>
+      {/* Precios de venta */}
+      <p className="section-label mb-2">Precios de venta</p>
+      <div className="card rounded-2xl p-4 mb-4">
+        {[
+          {k:"precioSoloTejaM2",  l:"Solo Teja (por m²)",            def:85000},
+          {k:"precioTodoCostoM2", l:"Todo Costo (por m²)",           def:106623},
+          {k:"precioMallaRollo",  l:"Malla Electrosoldada (por rollo)",def:262700},
+        ].map(({k,l,def})=>(
+          <div key={k} className="flex items-center gap-3 mb-3 last:mb-0">
+            <div className="flex-1">
+              <p className="text-sm text-gray-200">{l}</p>
+              <p className="text-[10px] text-gray-600">Default: ${def.toLocaleString("es-CO")}</p>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-gray-500 text-xs">$</span>
+              <input type="number" min="0"
+                className="w-24 bg-black/30 rounded-xl px-2 py-1.5 text-white text-sm text-right outline-none focus:ring-1 focus:ring-orange-500"
+                value={cfg[k]||""} onChange={e=>setCfg(k,e.target.value)}/>
+            </div>
           </div>
         ))}
-        <div className="flex gap-2">
-          <input className={ic+" flex-1"} value={nuevoEq} onChange={e=>setNuevoEq(e.target.value)}
-            placeholder="Nombre del contratista" onKeyDown={e=>{if(e.key==="Enter")agregarEq();}}/>
-          <button onClick={agregarEq} className="btn-primary rounded-xl px-5 text-white font-bold text-xl">+</button>
-        </div>
+      </div>
+
+      {/* Porcentajes */}
+      <p className="section-label mb-2">Porcentajes</p>
+      <div className="card rounded-2xl p-4 mb-4">
+        {[
+          {k:"pctInversion",   l:"Fondo de Crecimiento",       sub:"% de la utilidad neta con cada pago"},
+          {k:"pctComisionJG",  l:"Comisión Juan Guillermo",    sub:"% del valor que cobra al cliente"},
+          {k:"pctComisionHerm",l:"Comisión Hermilson",         sub:"% del valor que cobra al cliente"},
+        ].map(({k,l,sub})=>(
+          <div key={k} className="flex items-center gap-3 mb-3 last:mb-0">
+            <div className="flex-1">
+              <p className="text-sm text-gray-200">{l}</p>
+              <p className="text-[10px] text-gray-600">{sub}</p>
+            </div>
+            <div className="flex items-center gap-1">
+              <input type="number" min="0" max="100"
+                className="w-16 bg-black/30 rounded-xl px-2 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
+                value={cfg[k]||""} onChange={e=>setCfg(k,e.target.value)}/>
+              <span className="text-gray-400 text-sm">%</span>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Exportar */}
       <div className="pt-4 border-t border-white/5">
         <button onClick={()=>{
           const wb=window.XLSX.utils.book_new();
-          const wsO=window.XLSX.utils.json_to_sheet(obras.map(o=>({
+          const ws=window.XLSX.utils.json_to_sheet(obras.map(o=>({
             Nombre:o.nombre||"",Cliente:o.cliente||"",Estado:o.estado||"",
-            "Venta Tejas":parseFloat(o.ventaTejas)||0,
-            "Cobrado":(o.pagosKaston||[]).reduce((s,p)=>s+(parseFloat(p.monto)||0),0),
-            "Pago Instalador":parseFloat(o.pagoDirectoInstalador)||0,
-            "Comisión Recibida":o.comisionRecibida?"Sí":"No",
-            "Fondo Materiales":parseFloat(o.fondoMateriales)||0,
+            "M2":n(o.m2),"Tipo":getTipo(o),
+            "Venta":n(o.m2)*getPrecioM2(o,cfg),
+            "Cobrado":(o.pagosKaston||[]).reduce((s,p)=>s+n(p.monto),0),
+            "Pago JG":n(o.pagoJG),"Com.JG Recibida":o.comJGRecibida?"Sí":"No",
+            "Pago Hermilson":n(o.pagoHerm),"Com.Herm Recibida":o.comHermRecibida?"Sí":"No",
             Fecha:o.fecha||""
           })));
-          window.XLSX.utils.book_append_sheet(wb,wsO,"Proyectos");
-          const fecha=new Date().toLocaleDateString("es-CO").replace(/\//g,"-");
-          window.XLSX.writeFile(wb,`Kaston_${fecha}.xlsx`);
-        }} className="w-full py-3.5 rounded-2xl font-bold text-sm text-white flex items-center justify-center gap-2"
+          window.XLSX.utils.book_append_sheet(wb,ws,"Proyectos");
+          window.XLSX.writeFile(wb,`Kaston_${new Date().toLocaleDateString("es-CO").replace(/\//g,"-")}.xlsx`);
+        }} className="w-full py-3.5 rounded-2xl font-bold text-sm text-white"
           style={{background:"linear-gradient(135deg,#166534,#15803d)"}}>
           Exportar proyectos a Excel
         </button>
@@ -799,20 +943,20 @@ function ConfigSheet({open,onClose,config,saveConfig,equipo,saveEquipo,comisione
 }
 
 // ── Login ─────────────────────────────────────────────────────
-function Login({onLogin}) {
-  const [digits,setDigits] = useState("");
-  const [shake,setShake]   = useState(false);
-  const tap = d => {
+function Login({onLogin}){
+  const [digits,setDigits]=useState("");
+  const [shake,setShake]=useState(false);
+  const tap=d=>{
     if(digits.length>=PIN_CODE.length) return;
     const next=digits+d; setDigits(next);
-    if(next.length===PIN_CODE.length) {
-      if(next===PIN_CODE){ localStorage.setItem("kastAuth","1"); setTimeout(onLogin,180); }
-      else{ setShake(true); setTimeout(()=>{ setDigits(""); setShake(false); },700); }
+    if(next.length===PIN_CODE.length){
+      if(next===PIN_CODE){localStorage.setItem("kastAuth","1");setTimeout(onLogin,180);}
+      else{setShake(true);setTimeout(()=>{setDigits("");setShake(false);},700);}
     }
   };
-  const del = () => setDigits(d=>d.slice(0,-1));
-  const keys = [1,2,3,4,5,6,7,8,9,null,0,"⌫"];
-  return (
+  const del=()=>setDigits(d=>d.slice(0,-1));
+  const keys=[1,2,3,4,5,6,7,8,9,null,0,"⌫"];
+  return(
     <div style={{background:"radial-gradient(ellipse at top,#120e04 0%,#080808 60%)",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px"}}>
       <div style={{width:"100%",maxWidth:320}}>
         <div style={{textAlign:"center",marginBottom:40}}>
@@ -844,28 +988,21 @@ function Login({onLogin}) {
 }
 
 // ── App ───────────────────────────────────────────────────────
-function App() {
-  const [auth,setAuth]            = useState(()=>localStorage.getItem("kastAuth")==="1");
-  const [tab,setTab]              = useState(0);
-  const [cfgSh,setCfgSh]          = useState(false);
-  const [dbStatus,setDbStatus]    = useState("?");
-  const [clientes,saveCli,rC]     = useStore("kaston_clientes");
-  const [obras,saveObr,rO]        = useStore("kaston_obras");
-  const [gastos,saveGas,rG]       = useStore("kaston_gastos");
-  const [tareas,,rT]              = useStore("kaston_tareas");
-  const [eventos,,rE]             = useStore("kaston_eventos");
-  const [equipo,saveEq,rEq]       = useStore("kaston_equipo",DEF_EQ);
-  const [comisiones,saveCom,rCom] = useStore("kaston_comisiones",{});
-  const [config,saveConf,rConf]   = useStore("kaston_config",DEF_CFG);
-  const [caja,saveCaja,rCaja]     = useStore("kaston_caja",[]);
+function App(){
+  const [auth,setAuth]            =useState(()=>localStorage.getItem("kastAuth")==="1");
+  const [tab,setTab]              =useState(0);
+  const [cfgSh,setCfgSh]          =useState(false);
+  const [dbStatus,setDbStatus]    =useState("?");
+  const [clientes,,rC]            =useStore("kaston_clientes");
+  const [obras,saveObr,rO]        =useStore("kaston_obras");
+  const [,,,rG]                   =[...useStore("kaston_gastos"),true]; // compat — no usado
+  const [config,saveConf,rConf]   =useStore("kaston_config",DEF_CFG);
+  const [caja,saveCaja,rCaja]     =useStore("kaston_caja",[]);
 
-  useEffect(()=>{ if(rEq&&equipo.length===0) saveEq(DEF_EQ); },[rEq]);
-  useEffect(()=>{ if(auth) dbPing().then(ok=>setDbStatus(ok?"✓":"✗")); },[auth]);
+  useEffect(()=>{if(auth)dbPing().then(ok=>setDbStatus(ok?"✓":"✗"));},[auth]);
 
   if(!auth) return <Login onLogin={()=>setAuth(true)}/>;
-
-  const ready = rC&&rO&&rG&&rT&&rE&&rEq&&rCom&&rConf&&rCaja;
-  if(!ready) return (
+  if(!rC||!rO||!rConf||!rCaja) return(
     <div style={{background:"#080808"}} className="min-h-screen flex items-center justify-center text-white">
       <div className="text-center">
         <div className="btn-primary w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-black mx-auto mb-4">K</div>
@@ -874,36 +1011,39 @@ function App() {
     </div>
   );
 
-  const comBadge = obras.filter(o=>{
-    const p=parseFloat(o.pagoDirectoInstalador)||0;
-    const c=parseFloat(comisiones[o.contratoInstalador||""])||0;
-    return p>0&&c>0&&!o.comisionRecibida;
+  const cfg={...DEF_CFG,...config};
+  const comBadge=obras.filter(o=>{
+    const jg  =n(o.pagoJG)  >(cfg.pctComisionJG  ||0)&&!o.comJGRecibida;
+    const herm=n(o.pagoHerm)>(cfg.pctComisionHerm||0)&&!o.comHermRecibida;
+    // Más preciso: tiene comisión pendiente si el monto > 0
+    const cj=n(o.pagoJG)  *(cfg.pctComisionJG  ||0)/100>0&&!o.comJGRecibida;
+    const ch=n(o.pagoHerm)*(cfg.pctComisionHerm||0)/100>0&&!o.comHermRecibida;
+    return cj||ch;
   }).length;
 
-  const tabLabels = ["Proyectos","Comisiones","Caja KASTON"];
-
-  const TABS = [
-    {label:"Proyectos", icon:(
+  const tabLabels=["Proyectos","Comisiones","Caja KASTON"];
+  const TABS=[
+    {l:"Proyectos",icon:(
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 21h18M3 10h18M5 21V7l7-4 7 4v14"/><rect x="9" y="13" width="6" height="8" rx="1"/>
       </svg>
     )},
-    {label:"Comisiones", badge:comBadge, icon:(
+    {l:"Comisiones",badge:comBadge,icon:(
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
       </svg>
     )},
-    {label:"Caja", icon:(
+    {l:"Caja",icon:(
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>
       </svg>
     )},
   ];
 
-  return (
+  return(
     <div style={{background:"#080808",maxWidth:480,margin:"0 auto"}} className="min-h-screen text-white flex flex-col">
       <div className="header-bg px-4 pb-3 flex items-center gap-3"
-        style={{paddingTop:"max(env(safe-area-inset-top), 12px)",position:"sticky",top:0,zIndex:40}}>
+        style={{paddingTop:"max(env(safe-area-inset-top),12px)",position:"sticky",top:0,zIndex:40}}>
         <div className="flex items-center gap-2.5 flex-1">
           <img src="logo.svg" alt="Kaston" style={{height:34,width:"auto",objectFit:"contain"}}/>
           <div>
@@ -911,8 +1051,7 @@ function App() {
             <div style={{fontSize:10,color:"#B87333",opacity:0.75,letterSpacing:"0.04em",marginTop:2}}>{tabLabels[tab]}</div>
           </div>
         </div>
-        <span title={dbStatus==="✓"?"En línea":"Sin conexión"}
-          style={{width:7,height:7,borderRadius:"50%",background:dbStatus==="✓"?"#22c55e":dbStatus==="✗"?"#ef4444":"#555",display:"inline-block",flexShrink:0}}/>
+        <span style={{width:7,height:7,borderRadius:"50%",background:dbStatus==="✓"?"#22c55e":dbStatus==="✗"?"#ef4444":"#555",display:"inline-block",flexShrink:0}}/>
         <button onClick={()=>setCfgSh(true)} className="w-8 h-8 rounded-full flex items-center justify-center"
           style={{background:"rgba(255,255,255,0.06)"}}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -922,30 +1061,28 @@ function App() {
       </div>
 
       <div className="flex-1 pb-24 fade-in">
-        {tab===0 && <ProyectosTab obras={obras} saveObras={saveObr} clientes={clientes} comisiones={comisiones} config={config} caja={caja} saveCaja={saveCaja}/>}
-        {tab===1 && <ComisionesTab obras={obras} saveObras={saveObr} comisiones={comisiones}/>}
-        {tab===2 && <CajaTab caja={caja} saveCaja={saveCaja}/>}
+        {tab===0&&<ProyectosTab obras={obras} saveObras={saveObr} clientes={clientes} config={config} caja={caja} saveCaja={saveCaja}/>}
+        {tab===1&&<ComisionesTab obras={obras} saveObras={saveObr} config={config}/>}
+        {tab===2&&<CajaTab caja={caja} saveCaja={saveCaja}/>}
       </div>
 
       <div className="tab-bar safe-bottom fixed bottom-0 flex no-select"
         style={{maxWidth:480,left:"50%",transform:"translateX(-50%)",width:"100%"}}>
-        {TABS.map(({label,badge,icon},i)=>(
+        {TABS.map(({l,badge,icon},i)=>(
           <button key={i} onClick={()=>setTab(i)} className="flex-1 py-2 flex flex-col items-center relative transition-all">
-            <div className="tab-icon-wrap" style={{color:tab===i?"#B87333":"#4b5563",background:tab===i?"rgba(184,115,51,0.12)":"transparent"}}>
+            <div className="tab-icon-wrap"
+              style={{color:tab===i?"#B87333":"#4b5563",background:tab===i?"rgba(184,115,51,0.12)":"transparent"}}>
               {icon}
-              <span style={{fontSize:8,fontWeight:700,letterSpacing:"0.05em",opacity:tab===i?1:0,height:tab===i?10:0,overflow:"hidden",transition:"all 0.15s",textTransform:"uppercase"}}>{label}</span>
+              <span style={{fontSize:8,fontWeight:700,letterSpacing:"0.05em",opacity:tab===i?1:0,height:tab===i?10:0,overflow:"hidden",transition:"all 0.15s",textTransform:"uppercase"}}>{l}</span>
             </div>
-            {badge>0 && <span className="absolute top-1.5 right-1/4 text-white rounded-full w-4 h-4 flex items-center justify-center font-bold"
+            {badge>0&&<span className="absolute top-1.5 right-1/4 text-white rounded-full w-4 h-4 flex items-center justify-center font-bold"
               style={{background:"#B87333",fontSize:9}}>{badge}</span>}
           </button>
         ))}
       </div>
 
       <ConfigSheet open={cfgSh} onClose={()=>setCfgSh(false)}
-        config={config} saveConfig={saveConf}
-        equipo={equipo} saveEquipo={saveEq}
-        comisiones={comisiones} saveComisiones={saveCom}
-        clientes={clientes} obras={obras} gastos={gastos} tareas={tareas} eventos={eventos}/>
+        config={config} saveConfig={saveConf} obras={obras} clientes={clientes}/>
     </div>
   );
 }
