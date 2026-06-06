@@ -481,86 +481,143 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
           {[
             {
               key:"jg", dot:"bg-blue-500", nombre:"Juan Guillermo", rol:"Cubierta de madera",
-              campoPago:"pagoJG", campoPct:"pctComJG", campoClientePago:"clientePagoJG",
+              campoPago:"pagoJG", campoPct:"pctComJG",
+              campoAntPct:"pctAnticipoJG", campoAntPag:"pagoAnticipoJG", campoSalPag:"pagoSaldoJG",
               campoRecibida:"comJGRecibida", campoFecha:"comJGFecha",
-              pago:pagoJG, pct:pctJG, com:comJG,
-              recibida:o.comJGRecibida||false, clientePago:o.clientePagoJG||false, fecha:o.comJGFecha||"",
+              pago:pagoJG, pct:pctJG, com:comJG, recibida:o.comJGRecibida||false, fecha:o.comJGFecha||"",
+              pctAnticipo: o.pctAnticipoJG!==undefined&&o.pctAnticipoJG!==""?n(o.pctAnticipoJG):50,
+              pagoAnticipo: o.pagoAnticipoJG||false,
+              pagoSaldo:    o.pagoSaldoJG   ||false,
             },
             {
               key:"herm", dot:"bg-purple-500", nombre:"Hermilson", rol:"Mampostería y obra civil",
-              campoPago:"pagoHerm", campoPct:"pctComHerm", campoClientePago:"clientePagoHerm",
+              campoPago:"pagoHerm", campoPct:"pctComHerm",
+              campoAntPct:"pctAnticipoHerm", campoAntPag:"pagoAnticipoHerm", campoSalPag:"pagoSaldoHerm",
               campoRecibida:"comHermRecibida", campoFecha:"comHermFecha",
-              pago:pagoHerm, pct:pctHerm, com:comHerm,
-              recibida:o.comHermRecibida||false, clientePago:o.clientePagoHerm||false, fecha:o.comHermFecha||"",
+              pago:pagoHerm, pct:pctHerm, com:comHerm, recibida:o.comHermRecibida||false, fecha:o.comHermFecha||"",
+              pctAnticipo: o.pctAnticipoHerm!==undefined&&o.pctAnticipoHerm!==""?n(o.pctAnticipoHerm):50,
+              pagoAnticipo: o.pagoAnticipoHerm||false,
+              pagoSaldo:    o.pagoSaldoHerm   ||false,
             },
-          ].map(ct=>(
-            <div key={ct.key} className="card rounded-2xl p-4 mb-3">
-              {/* Encabezado */}
-              <div className="flex items-center gap-2 mb-3">
-                <div className={`w-2 h-2 rounded-full ${ct.dot} flex-shrink-0`}/>
-                <p className="font-bold text-sm">{ct.nombre}</p>
-                <span className="text-xs text-gray-500">— {ct.rol}</span>
-              </div>
+          ].map(ct=>{
+            const pctSaldo    = Math.max(0, 100 - ct.pctAnticipo);
+            const valAnticipo = ct.pago * ct.pctAnticipo / 100;
+            const valSaldo    = ct.pago * pctSaldo / 100;
+            const estado      = ct.pagoSaldo && ct.pagoAnticipo
+              ? {l:"Contrato Liquidado",               c:"text-green-400",  bg:"bg-green-900/20 border-green-700/30"}
+              : ct.pagoAnticipo
+              ? {l:"Anticipo Pagado — Obra en Curso",  c:"text-yellow-400", bg:"bg-yellow-900/20 border-yellow-700/30"}
+              : {l:"Sin abonar",                       c:"text-gray-500",   bg:"bg-gray-800/50 border-gray-700/30"};
 
-              {/* Valor acordado */}
-              <Inp label={`Valor acordado cliente → ${ct.nombre} (COP)`} type="number"
-                value={o[ct.campoPago]||""} onChange={e=>upd({[ct.campoPago]:e.target.value})} placeholder="0"/>
+            return (
+              <div key={ct.key} className="card rounded-2xl p-4 mb-3">
 
-              {ct.pago>0&&(
-                <>
-                  {/* % comisión editable por proyecto */}
-                  <div className="flex items-center gap-2 mb-3 p-2.5 bg-black/20 rounded-xl">
-                    <span className="text-xs text-gray-400 flex-1">% Comisión Kaston (esta obra)</span>
-                    <input type="number" min="0" max="100"
-                      className="w-14 bg-gray-800 border border-gray-700 rounded-xl px-2 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
-                      value={o[ct.campoPct]!==undefined&&o[ct.campoPct]!==""?o[ct.campoPct]:ct.pct}
-                      onChange={e=>upd({[ct.campoPct]:e.target.value})}/>
-                    <span className="text-gray-400 text-xs">%</span>
-                    <span className="text-orange-400 font-bold text-sm">{fmt(ct.com)}</span>
+                {/* Encabezado + estado */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${ct.dot} flex-shrink-0`}/>
+                    <p className="font-bold text-sm">{ct.nombre}</p>
+                    <span className="text-xs text-gray-500">— {ct.rol}</span>
                   </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${estado.bg} ${estado.c}`}>
+                    {estado.l}
+                  </span>
+                </div>
 
-                  {/* Checkboxes de estado */}
-                  <div className="space-y-2 border-t border-white/5 pt-3">
-                    {/* Checkbox 1: ¿El cliente ya le pagó al contratista? */}
-                    <button onClick={()=>upd({[ct.campoClientePago]:!ct.clientePago})}
-                      className={`w-full flex items-center gap-3 py-2.5 px-3 rounded-xl border transition text-left ${ct.clientePago?"bg-blue-900/25 border-blue-700/40":"bg-gray-900/50 border-gray-700/50"}`}>
-                      <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${ct.clientePago?"bg-blue-600 border-blue-600":"border-gray-500"}`}>
-                        {ct.clientePago&&<span className="text-white text-xs font-bold">✓</span>}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-semibold ${ct.clientePago?"text-blue-300":"text-gray-400"}`}>
-                          {ct.clientePago?`✓ Cliente ya le pagó a ${ct.nombre}`:`¿El cliente ya le pagó a ${ct.nombre}?`}
-                        </p>
-                        {ct.clientePago&&<p className="text-[10px] text-blue-600">{fmt(ct.pago)} — informativo</p>}
-                      </div>
-                    </button>
+                {/* Valor total del contrato */}
+                <Inp label={`Valor total acordado cliente → ${ct.nombre} (COP)`} type="number"
+                  value={o[ct.campoPago]||""} onChange={e=>upd({[ct.campoPago]:e.target.value})} placeholder="0"/>
 
-                    {/* Checkbox 2: ¿Comisión recibida por KASTON? */}
-                    {!ct.recibida?(
-                      <div className="rounded-xl p-3 bg-orange-900/30 border border-orange-700/50">
-                        <p className="text-orange-300 text-xs font-bold mb-0.5">⚠ Comisión pendiente</p>
-                        <p className="text-orange-200 text-xs mb-3">{ct.nombre} debe {fmt(ct.com)} de comisión a Kaston.</p>
-                        <button onClick={()=>upd({[ct.campoRecibida]:true,[ct.campoFecha]:hoy()})}
-                          className="w-full py-2.5 rounded-xl bg-orange-600 text-white text-xs font-bold active:scale-95 transition-transform flex items-center justify-center gap-2">
-                          <div className="w-5 h-5 rounded-md border-2 border-white/50 flex items-center justify-center flex-shrink-0"/>
-                          ¿Comisión recibida por Kaston?
-                        </button>
-                      </div>
-                    ):(
-                      <div className="rounded-xl p-3 bg-green-900/30 border border-green-700/40 flex items-center justify-between">
-                        <div>
-                          <p className="text-green-400 text-xs font-bold">✓ Comisión recibida por Kaston</p>
-                          <p className="text-green-300 text-xs">{fmt(ct.com)}{ct.fecha?" · "+ct.fecha:""}</p>
+                {ct.pago>0&&(
+                  <>
+                    {/* % Comisión Kaston editable */}
+                    <div className="flex items-center gap-2 mb-4 p-2.5 bg-black/20 rounded-xl">
+                      <span className="text-xs text-gray-400 flex-1">% Comisión Kaston (esta obra)</span>
+                      <input type="number" min="0" max="100"
+                        className="w-14 bg-gray-800 border border-gray-700 rounded-xl px-2 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
+                        value={o[ct.campoPct]!==undefined&&o[ct.campoPct]!==""?o[ct.campoPct]:ct.pct}
+                        onChange={e=>upd({[ct.campoPct]:e.target.value})}/>
+                      <span className="text-gray-400 text-xs">%</span>
+                      <span className="text-orange-400 font-bold text-sm">{fmt(ct.com)}</span>
+                    </div>
+
+                    {/* ── Fases de pago ───────────────────────── */}
+                    <p className="section-label mb-2">Fases de pago del cliente</p>
+
+                    {/* Porcentajes */}
+                    <div className="flex gap-2 mb-3">
+                      <div className="flex-1 bg-black/20 rounded-xl p-3">
+                        <p className="text-[9px] text-gray-500 uppercase mb-1.5">% Anticipo Inicial</p>
+                        <div className="flex items-center gap-1">
+                          <input type="number" min="0" max="100"
+                            className="w-14 bg-gray-800 border border-gray-700 rounded-xl px-2 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
+                            value={o[ct.campoAntPct]!==undefined&&o[ct.campoAntPct]!==""?o[ct.campoAntPct]:ct.pctAnticipo}
+                            onChange={e=>upd({[ct.campoAntPct]:e.target.value})}/>
+                          <span className="text-gray-400 text-xs">%</span>
                         </div>
-                        <button onClick={()=>upd({[ct.campoRecibida]:false,[ct.campoFecha]:""})}
-                          className="text-xs text-gray-500 underline">Revertir</button>
+                        <p className="text-xs font-bold text-white mt-1.5">{fmt(valAnticipo)}</p>
                       </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
+                      <div className="flex-1 bg-black/20 rounded-xl p-3">
+                        <p className="text-[9px] text-gray-500 uppercase mb-1.5">% Saldo Final (auto)</p>
+                        <div className="flex items-center gap-1">
+                          <div className="w-14 bg-gray-900 border border-gray-700/50 rounded-xl px-2 py-1.5 text-gray-400 text-sm text-center">{pctSaldo}</div>
+                          <span className="text-gray-500 text-xs">%</span>
+                        </div>
+                        <p className="text-xs font-bold text-white mt-1.5">{fmt(valSaldo)}</p>
+                      </div>
+                    </div>
+
+                    {/* Checkboxes de fases */}
+                    <div className="space-y-2 mb-4">
+                      {[
+                        {campo:ct.campoAntPag, marcado:ct.pagoAnticipo, label:`¿Cliente pagó Anticipo de Inicio?`, val:valAnticipo,
+                         labelOk:"✓ Anticipo de Inicio pagado", colOk:"bg-yellow-900/25 border-yellow-700/40 text-yellow-300",
+                         colNo:"bg-gray-900/50 border-gray-700/50 text-gray-400", chkOk:"bg-yellow-500 border-yellow-500"},
+                        {campo:ct.campoSalPag, marcado:ct.pagoSaldo,    label:`¿Cliente pagó Saldo de Finalización?`, val:valSaldo,
+                         labelOk:"✓ Saldo de Finalización pagado", colOk:"bg-green-900/25 border-green-700/40 text-green-300",
+                         colNo:"bg-gray-900/50 border-gray-700/50 text-gray-400", chkOk:"bg-green-600 border-green-600"},
+                      ].map(({campo,marcado,label,val,labelOk,colOk,colNo,chkOk})=>(
+                        <button key={campo} onClick={()=>upd({[campo]:!marcado})}
+                          className={`w-full flex items-center gap-3 py-2.5 px-3 rounded-xl border transition text-left ${marcado?colOk:colNo}`}>
+                          <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${marcado?chkOk:"border-gray-500"}`}>
+                            {marcado&&<span className="text-white text-xs font-bold">✓</span>}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold">{marcado?labelOk:label}</p>
+                            <p className="text-[10px] opacity-70">{fmt(val)}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* ── Comisión Kaston ──────────────────────── */}
+                    <div className="border-t border-white/5 pt-3">
+                      {!ct.recibida?(
+                        <div className="rounded-xl p-3 bg-orange-900/30 border border-orange-700/50">
+                          <p className="text-orange-300 text-xs font-bold mb-0.5">⚠ Comisión pendiente</p>
+                          <p className="text-orange-200 text-xs mb-3">{ct.nombre} debe {fmt(ct.com)} a Kaston.</p>
+                          <button onClick={()=>upd({[ct.campoRecibida]:true,[ct.campoFecha]:hoy()})}
+                            className="w-full py-2.5 rounded-xl bg-orange-600 text-white text-xs font-bold active:scale-95 transition-transform flex items-center justify-center gap-2">
+                            <div className="w-4 h-4 rounded border-2 border-white/50 flex-shrink-0"/>
+                            ¿Comisión recibida por Kaston?
+                          </button>
+                        </div>
+                      ):(
+                        <div className="rounded-xl p-3 bg-green-900/30 border border-green-700/40 flex items-center justify-between">
+                          <div>
+                            <p className="text-green-400 text-xs font-bold">✓ Comisión recibida por Kaston</p>
+                            <p className="text-green-300 text-xs">{fmt(ct.com)}{ct.fecha?" · "+ct.fecha:""}</p>
+                          </div>
+                          <button onClick={()=>upd({[ct.campoRecibida]:false,[ct.campoFecha]:""})}
+                            className="text-xs text-gray-500 underline">Revertir</button>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })}
         </>
       )}
 
