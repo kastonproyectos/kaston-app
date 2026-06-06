@@ -220,24 +220,6 @@ function Toggle({on,onToggle,label,sub}){
   );
 }
 
-function AlertaCom({nombre,monto,recibida,onMarcar,onRevertir}){
-  if(!monto) return null;
-  if(recibida) return(
-    <div className="rounded-xl p-3 mt-2 bg-green-900/30 border border-green-700/40 flex justify-between items-center">
-      <div><p className="text-green-400 text-xs font-bold">✓ Comisión recibida</p><p className="text-green-300 text-xs">{fmt(monto)}</p></div>
-      <button onClick={onRevertir} className="text-xs text-gray-500 underline">Revertir</button>
-    </div>
-  );
-  return(
-    <div className="rounded-xl p-3 mt-2 bg-orange-900/30 border border-orange-700/50">
-      <p className="text-orange-300 text-xs font-bold mb-0.5">⚠ Comisión pendiente</p>
-      <p className="text-orange-200 text-xs mb-3">{nombre} debe {fmt(monto)} de comisión por esta obra.</p>
-      <button onClick={onMarcar} className="w-full py-2 rounded-xl bg-orange-600 text-white text-xs font-bold active:scale-95 transition-transform">
-        ✓ Marcar como Recibido
-      </button>
-    </div>
-  );
-}
 
 // ── ProyectoDetalle ──────────────────────────────────────────
 function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
@@ -267,11 +249,13 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
   const listaFavores=o.listaFavores||[];
   const gastadoFavores=listaFavores.filter(i=>i.comprado).reduce((s,i)=>s+n(i.monto),0);
 
-  // Contratistas
+  // Contratistas — % por proyecto con fallback al global
   const pagoJG  =n(o.pagoJG);
   const pagoHerm=n(o.pagoHerm);
-  const comJG   =pagoJG   *(cfg.pctComisionJG||0)/100;
-  const comHerm =pagoHerm *(cfg.pctComisionHerm||0)/100;
+  const pctJG   =o.pctComJG  !==undefined&&o.pctComJG  !==""?n(o.pctComJG)  :(cfg.pctComisionJG  ||0);
+  const pctHerm =o.pctComHerm!==undefined&&o.pctComHerm!==""?n(o.pctComHerm):(cfg.pctComisionHerm||0);
+  const comJG   =pagoJG  *pctJG  /100;
+  const comHerm =pagoHerm*pctHerm/100;
 
   // Local state
   const [pagoSh,setPagoSh]=useState(false);
@@ -494,47 +478,89 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
       {/* Tarjetas de contratistas (Ruta C siempre · Ruta A solo si switch activo) */}
       {mostrarContratistas(o)&&(
         <>
-          {/* Juan Guillermo */}
-          <div className="card rounded-2xl p-4 mb-3">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"/>
-              <p className="font-bold text-sm">Juan Guillermo</p>
-              <span className="text-xs text-gray-500">— Cubierta de madera</span>
-            </div>
-            <Inp label="Valor acordado cliente → Juan Guillermo (COP)" type="number"
-              value={o.pagoJG||""} onChange={e=>upd({pagoJG:e.target.value})} placeholder="0"/>
-            {pagoJG>0&&(
-              <>
-                <div className="flex justify-between text-sm py-1 border-t border-white/5 mt-1">
-                  <span className="text-gray-400">Comisión Kaston ({cfg.pctComisionJG}%)</span>
-                  <span className="text-orange-400 font-bold">{fmt(comJG)}</span>
-                </div>
-                <AlertaCom nombre="Juan Guillermo" monto={comJG} recibida={o.comJGRecibida||false}
-                  onMarcar={()=>upd({comJGRecibida:true})} onRevertir={()=>upd({comJGRecibida:false})}/>
-              </>
-            )}
-          </div>
+          {[
+            {
+              key:"jg", dot:"bg-blue-500", nombre:"Juan Guillermo", rol:"Cubierta de madera",
+              campoPago:"pagoJG", campoPct:"pctComJG", campoClientePago:"clientePagoJG",
+              campoRecibida:"comJGRecibida", campoFecha:"comJGFecha",
+              pago:pagoJG, pct:pctJG, com:comJG,
+              recibida:o.comJGRecibida||false, clientePago:o.clientePagoJG||false, fecha:o.comJGFecha||"",
+            },
+            {
+              key:"herm", dot:"bg-purple-500", nombre:"Hermilson", rol:"Mampostería y obra civil",
+              campoPago:"pagoHerm", campoPct:"pctComHerm", campoClientePago:"clientePagoHerm",
+              campoRecibida:"comHermRecibida", campoFecha:"comHermFecha",
+              pago:pagoHerm, pct:pctHerm, com:comHerm,
+              recibida:o.comHermRecibida||false, clientePago:o.clientePagoHerm||false, fecha:o.comHermFecha||"",
+            },
+          ].map(ct=>(
+            <div key={ct.key} className="card rounded-2xl p-4 mb-3">
+              {/* Encabezado */}
+              <div className="flex items-center gap-2 mb-3">
+                <div className={`w-2 h-2 rounded-full ${ct.dot} flex-shrink-0`}/>
+                <p className="font-bold text-sm">{ct.nombre}</p>
+                <span className="text-xs text-gray-500">— {ct.rol}</span>
+              </div>
 
-          {/* Hermilson */}
-          <div className="card rounded-2xl p-4 mb-5">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0"/>
-              <p className="font-bold text-sm">Hermilson</p>
-              <span className="text-xs text-gray-500">— Mampostería y obra civil</span>
+              {/* Valor acordado */}
+              <Inp label={`Valor acordado cliente → ${ct.nombre} (COP)`} type="number"
+                value={o[ct.campoPago]||""} onChange={e=>upd({[ct.campoPago]:e.target.value})} placeholder="0"/>
+
+              {ct.pago>0&&(
+                <>
+                  {/* % comisión editable por proyecto */}
+                  <div className="flex items-center gap-2 mb-3 p-2.5 bg-black/20 rounded-xl">
+                    <span className="text-xs text-gray-400 flex-1">% Comisión Kaston (esta obra)</span>
+                    <input type="number" min="0" max="100"
+                      className="w-14 bg-gray-800 border border-gray-700 rounded-xl px-2 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
+                      value={o[ct.campoPct]!==undefined&&o[ct.campoPct]!==""?o[ct.campoPct]:ct.pct}
+                      onChange={e=>upd({[ct.campoPct]:e.target.value})}/>
+                    <span className="text-gray-400 text-xs">%</span>
+                    <span className="text-orange-400 font-bold text-sm">{fmt(ct.com)}</span>
+                  </div>
+
+                  {/* Checkboxes de estado */}
+                  <div className="space-y-2 border-t border-white/5 pt-3">
+                    {/* Checkbox 1: ¿El cliente ya le pagó al contratista? */}
+                    <button onClick={()=>upd({[ct.campoClientePago]:!ct.clientePago})}
+                      className={`w-full flex items-center gap-3 py-2.5 px-3 rounded-xl border transition text-left ${ct.clientePago?"bg-blue-900/25 border-blue-700/40":"bg-gray-900/50 border-gray-700/50"}`}>
+                      <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${ct.clientePago?"bg-blue-600 border-blue-600":"border-gray-500"}`}>
+                        {ct.clientePago&&<span className="text-white text-xs font-bold">✓</span>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-xs font-semibold ${ct.clientePago?"text-blue-300":"text-gray-400"}`}>
+                          {ct.clientePago?`✓ Cliente ya le pagó a ${ct.nombre}`:`¿El cliente ya le pagó a ${ct.nombre}?`}
+                        </p>
+                        {ct.clientePago&&<p className="text-[10px] text-blue-600">{fmt(ct.pago)} — informativo</p>}
+                      </div>
+                    </button>
+
+                    {/* Checkbox 2: ¿Comisión recibida por KASTON? */}
+                    {!ct.recibida?(
+                      <div className="rounded-xl p-3 bg-orange-900/30 border border-orange-700/50">
+                        <p className="text-orange-300 text-xs font-bold mb-0.5">⚠ Comisión pendiente</p>
+                        <p className="text-orange-200 text-xs mb-3">{ct.nombre} debe {fmt(ct.com)} de comisión a Kaston.</p>
+                        <button onClick={()=>upd({[ct.campoRecibida]:true,[ct.campoFecha]:hoy()})}
+                          className="w-full py-2.5 rounded-xl bg-orange-600 text-white text-xs font-bold active:scale-95 transition-transform flex items-center justify-center gap-2">
+                          <div className="w-5 h-5 rounded-md border-2 border-white/50 flex items-center justify-center flex-shrink-0"/>
+                          ¿Comisión recibida por Kaston?
+                        </button>
+                      </div>
+                    ):(
+                      <div className="rounded-xl p-3 bg-green-900/30 border border-green-700/40 flex items-center justify-between">
+                        <div>
+                          <p className="text-green-400 text-xs font-bold">✓ Comisión recibida por Kaston</p>
+                          <p className="text-green-300 text-xs">{fmt(ct.com)}{ct.fecha?" · "+ct.fecha:""}</p>
+                        </div>
+                        <button onClick={()=>upd({[ct.campoRecibida]:false,[ct.campoFecha]:""})}
+                          className="text-xs text-gray-500 underline">Revertir</button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
-            <Inp label="Valor acordado cliente → Hermilson (COP)" type="number"
-              value={o.pagoHerm||""} onChange={e=>upd({pagoHerm:e.target.value})} placeholder="0"/>
-            {pagoHerm>0&&(
-              <>
-                <div className="flex justify-between text-sm py-1 border-t border-white/5 mt-1">
-                  <span className="text-gray-400">Comisión Kaston ({cfg.pctComisionHerm}%)</span>
-                  <span className="text-orange-400 font-bold">{fmt(comHerm)}</span>
-                </div>
-                <AlertaCom nombre="Hermilson" monto={comHerm} recibida={o.comHermRecibida||false}
-                  onMarcar={()=>upd({comHermRecibida:true})} onRevertir={()=>upd({comHermRecibida:false})}/>
-              </>
-            )}
-          </div>
+          ))}
         </>
       )}
 
@@ -632,8 +658,10 @@ function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
     const cobrado=(o.pagosKaston||[]).reduce((s,p)=>s+n(p.monto),0);
     // Solo muestra alerta de comisión si la ruta activa contratistas
     const tieneContr=mostrarContratistas(o);
-    const comJGPend=tieneContr&&n(o.pagoJG)>0&&(cfg.pctComisionJG||0)>0&&!o.comJGRecibida;
-    const comHPend =tieneContr&&n(o.pagoHerm)>0&&(cfg.pctComisionHerm||0)>0&&!o.comHermRecibida;
+    const pJG  =o.pctComJG  !==undefined&&o.pctComJG  !==""?n(o.pctComJG)  :(cfg.pctComisionJG  ||0);
+    const pHerm=o.pctComHerm!==undefined&&o.pctComHerm!==""?n(o.pctComHerm):(cfg.pctComisionHerm||0);
+    const comJGPend=tieneContr&&n(o.pagoJG)>0&&pJG>0&&!o.comJGRecibida;
+    const comHPend =tieneContr&&n(o.pagoHerm)>0&&pHerm>0&&!o.comHermRecibida;
     return {venta,cobrado,pendiente:Math.max(0,venta-cobrado),comPend:comJGPend||comHPend};
   };
 
@@ -729,40 +757,60 @@ function ComisionesTab({obras,saveObras,config}){
   const cfg={...DEF_CFG,...config};
   const items=[];
   obras.forEach(o=>{
-    if(!mostrarContratistas(o)) return; // Ruta B nunca; Ruta A sin switch = nunca
-    const jg  =n(o.pagoJG)  *(cfg.pctComisionJG  ||0)/100;
-    const herm=n(o.pagoHerm)*(cfg.pctComisionHerm||0)/100;
-    if(jg>0)   items.push({key:o.id+"-jg",  obraId:o.id,obra:o.nombre,quien:"Juan Guillermo",pago:n(o.pagoJG),  pct:cfg.pctComisionJG,  monto:jg,  recibida:o.comJGRecibida  ||false,campo:"comJGRecibida"});
-    if(herm>0) items.push({key:o.id+"-herm",obraId:o.id,obra:o.nombre,quien:"Hermilson",     pago:n(o.pagoHerm),pct:cfg.pctComisionHerm,monto:herm,recibida:o.comHermRecibida||false,campo:"comHermRecibida"});
+    if(!mostrarContratistas(o)) return;
+    // Usa % por proyecto si está definido, si no el global
+    const pJG  =o.pctComJG  !==undefined&&o.pctComJG  !==""?n(o.pctComJG)  :(cfg.pctComisionJG  ||0);
+    const pHerm=o.pctComHerm!==undefined&&o.pctComHerm!==""?n(o.pctComHerm):(cfg.pctComisionHerm||0);
+    const jg   =n(o.pagoJG)  *pJG  /100;
+    const herm =n(o.pagoHerm)*pHerm/100;
+    if(jg>0)   items.push({key:o.id+"-jg",  obraId:o.id,obra:o.nombre,quien:"Juan Guillermo",
+      pago:n(o.pagoJG),  pct:pJG,  monto:jg,
+      recibida:o.comJGRecibida  ||false, fecha:o.comJGFecha  ||"",
+      campo:"comJGRecibida",  campoFecha:"comJGFecha",
+      clientePago:o.clientePagoJG  ||false});
+    if(herm>0) items.push({key:o.id+"-herm",obraId:o.id,obra:o.nombre,quien:"Hermilson",
+      pago:n(o.pagoHerm),pct:pHerm,monto:herm,
+      recibida:o.comHermRecibida||false, fecha:o.comHermFecha||"",
+      campo:"comHermRecibida",campoFecha:"comHermFecha",
+      clientePago:o.clientePagoHerm||false});
   });
   const pend=items.filter(i=>!i.recibida);
-  const rec =items.filter(i=>i.recibida);
+  const hist=items.filter(i=>i.recibida);
   const total=pend.reduce((s,i)=>s+i.monto,0);
-  const marcar  =item=>saveObras(obras.map(o=>o.id===item.obraId?{...o,[item.campo]:true}:o));
-  const revertir=item=>saveObras(obras.map(o=>o.id===item.obraId?{...o,[item.campo]:false}:o));
 
-  const Fila=({item,recibida=false})=>(
-    <div className={`card rounded-2xl p-4 mb-3 ${recibida?"opacity-50":""}`}>
-      <div className="flex justify-between items-start mb-1">
+  const marcar  =item=>saveObras(obras.map(o=>o.id===item.obraId?{...o,[item.campo]:true,[item.campoFecha]:hoy()}:o));
+  const revertir=item=>saveObras(obras.map(o=>o.id===item.obraId?{...o,[item.campo]:false,[item.campoFecha]:""}:o));
+
+  const Fila=({item,cobrada=false})=>(
+    <div className={`card rounded-2xl p-4 mb-3 ${cobrada?"opacity-60":""}`}>
+      <div className="flex justify-between items-start mb-2">
         <div className="flex-1 min-w-0 pr-3">
           <p className="font-semibold text-sm">{item.obra}</p>
           <p className="text-xs text-gray-500">{item.quien} · {item.pct}% de {fmt(item.pago)}</p>
+          {item.clientePago&&<p className="text-[10px] text-blue-400 mt-0.5">✓ Cliente ya le pagó al contratista</p>}
         </div>
-        <span className={`text-xl font-black flex-shrink-0 ${recibida?"text-gray-500":"text-orange-400"}`}>{fmt(item.monto)}</span>
+        <span className={`text-xl font-black flex-shrink-0 ${cobrada?"text-gray-500":"text-orange-400"}`}>{fmt(item.monto)}</span>
       </div>
-      {!recibida?(
+      {!cobrada?(
         <button onClick={()=>marcar(item)}
-          className="mt-2 w-full py-2 rounded-xl bg-orange-700 text-white text-xs font-bold active:scale-95 transition-transform">
-          ✓ Marcar como Recibido
+          className="w-full py-2.5 rounded-xl bg-orange-700 text-white text-xs font-bold active:scale-95 transition-transform flex items-center justify-center gap-2">
+          <div className="w-4 h-4 rounded border-2 border-white/50 flex-shrink-0"/>
+          ¿Comisión recibida por Kaston?
         </button>
       ):(
-        <button onClick={()=>revertir(item)} className="mt-1 text-xs text-gray-600 underline">Revertir</button>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-green-400 font-semibold">✓ Recibida por Kaston{item.fecha?" · "+item.fecha:""}</p>
+          </div>
+          <button onClick={()=>revertir(item)} className="text-xs text-gray-600 underline">Revertir</button>
+        </div>
       )}
     </div>
   );
 
   return(
     <div className="p-4" style={{paddingBottom:"calc(env(safe-area-inset-bottom)+96px)"}}>
+      {/* Total pendiente */}
       {total>0&&(
         <div className="card rounded-2xl p-5 mb-5 text-center" style={{borderColor:"rgba(234,88,12,0.4)"}}>
           <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Total Comisiones por Recibir</p>
@@ -770,14 +818,31 @@ function ComisionesTab({obras,saveObras,config}){
           <p className="text-xs text-gray-500 mt-1">{pend.length} comisión{pend.length!==1?"es":""} pendiente{pend.length!==1?"s":""}</p>
         </div>
       )}
-      {items.length===0&&(
+      {total===0&&hist.length===0&&(
         <div className="text-center mt-20">
           <p className="text-gray-500 text-sm">Sin comisiones registradas.</p>
           <p className="text-xs text-gray-600 mt-1">Entra a un proyecto y completa los valores acordados con los contratistas.</p>
         </div>
       )}
-      {pend.length>0&&<><p className="section-label mb-3">Por cobrar</p>{pend.map(i=><Fila key={i.key} item={i}/>)}</>}
-      {rec.length>0&&<><p className="section-label mb-3 mt-4">Ya recibidas</p>{rec.map(i=><Fila key={i.key} item={i} recibida/>)}</>}
+      {total===0&&hist.length>0&&(
+        <div className="card rounded-2xl p-4 mb-5 text-center" style={{borderColor:"rgba(34,197,94,0.25)"}}>
+          <p className="text-xs text-green-400 uppercase tracking-wider mb-1">Todo cobrado</p>
+          <p className="text-2xl font-black text-green-300">{fmt(hist.reduce((s,i)=>s+i.monto,0))}</p>
+        </div>
+      )}
+
+      {/* Pendientes */}
+      {pend.length>0&&(
+        <><p className="section-label mb-3">Por cobrar</p>{pend.map(i=><Fila key={i.key} item={i}/>)}</>
+      )}
+
+      {/* Historial cobradas */}
+      {hist.length>0&&(
+        <>
+          <p className="section-label mb-3 mt-5">Historial de Comisiones Cobradas</p>
+          {hist.map(i=><Fila key={i.key} item={i} cobrada/>)}
+        </>
+      )}
     </div>
   );
 }
