@@ -266,13 +266,14 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
   const registrarPago=()=>{
     const m=n(montoPago);
     if(!m||!div) return;
-    upd({pagosKaston:[...pagosKaston,{id:uid(),monto:m,fecha:hoy(),desglose:div}]});
+    const pid=uid(); // pagoId compartido por todo el lote
+    upd({pagosKaston:[...pagosKaston,{id:pid,pagoId:pid,monto:m,fecha:hoy(),desglose:div}]});
     saveCaja(prev=>[...prev,
-      {id:uid(),tipo:"matPrima",    monto:div.matPrima,    concepto:`Mat.Prima — ${o.nombre}`,    fecha:hoy(),obraId:o.id},
-      {id:uid(),tipo:"nomina",      monto:div.nomina,      concepto:`Nómina — ${o.nombre}`,       fecha:hoy(),obraId:o.id},
-      {id:uid(),tipo:"costosFijos", monto:div.costosFijos, concepto:`Costos Fijos — ${o.nombre}`, fecha:hoy(),obraId:o.id},
-      ...(div.inversion>0?[{id:uid(),tipo:"inversion",monto:div.inversion,concepto:`Fondo Crec. — ${o.nombre}`,fecha:hoy(),obraId:o.id}]:[]),
-      {id:uid(),tipo:"utilLibre",   monto:div.utilLibre,   concepto:`Utilidad — ${o.nombre}`,    fecha:hoy(),obraId:o.id},
+      {id:uid(),pagoId:pid,tipo:"matPrima",    monto:div.matPrima,    concepto:`Mat.Prima — ${o.nombre}`,    fecha:hoy(),obraId:o.id},
+      {id:uid(),pagoId:pid,tipo:"nomina",      monto:div.nomina,      concepto:`Nómina — ${o.nombre}`,       fecha:hoy(),obraId:o.id},
+      {id:uid(),pagoId:pid,tipo:"costosFijos", monto:div.costosFijos, concepto:`Costos Fijos — ${o.nombre}`, fecha:hoy(),obraId:o.id},
+      ...(div.inversion>0?[{id:uid(),pagoId:pid,tipo:"inversion",monto:div.inversion,concepto:`Fondo Crec. — ${o.nombre}`,fecha:hoy(),obraId:o.id}]:[]),
+      {id:uid(),pagoId:pid,tipo:"utilLibre",   monto:div.utilLibre,   concepto:`Utilidad — ${o.nombre}`,    fecha:hoy(),obraId:o.id},
     ]);
     setMontoPago(""); setPagoSh(false);
   };
@@ -1007,12 +1008,16 @@ function ComisionesTab({obras,saveObras,config}){
 }
 
 // ── CajaTab ───────────────────────────────────────────────────
-function CajaTab({caja,saveCaja,deudas,saveDeudas}){
+function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
   const [sh,setSh]=useState(false);
+  const [editSh,setEditSh]=useState(false);
+  const [editEntry,setEditEntry]=useState(null);
+  const [editForm,setEditForm]=useState({concepto:"",monto:""});
   const todayISO=new Date().toISOString().slice(0,10);
   const blank={concepto:"",monto:"",deBolsa:"nomina",quien:"",fecha:todayISO};
   const [f,setF]=useState(blank);
   const upd=k=>e=>setF({...f,[k]:e.target.value});
+  const cfg={...DEF_CFG,...config};
   const b=calcBolsas(caja);
   const esPrestamo=f.deBolsa==="prestamo";
 
@@ -1021,14 +1026,50 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas}){
     if(!f.concepto.trim()||!m) return;
     if(esPrestamo){
       if(!f.quien.trim()) return;
-      // Descuenta del Balance Disponible
       saveCaja(prev=>[...prev,{id:uid(),concepto:f.concepto,monto:m,tipo:"gastoManual",deBolsa:"disponible",fecha:f.fecha,manual:true}]);
-      // Crea la deuda
       saveDeudas(prev=>[...prev,{id:uid(),quien:f.quien.trim(),monto:m,concepto:f.concepto,fecha:f.fecha,recuperado:false,fechaRecuperado:""}]);
     } else {
       saveCaja(prev=>[...prev,{...f,id:uid(),monto:m,tipo:"gastoManual",manual:true}]);
     }
     setF(blank); setSh(false);
+  };
+
+  // ── Editar entrada ───────────────────────────────
+  const abrirEdit=e=>{ setEditEntry(e); setEditForm({concepto:e.concepto||"",monto:String(e.monto||"")}); setEditSh(true); };
+
+  const guardarEdit=()=>{
+    if(!editEntry) return;
+    const newMonto=n(editForm.monto);
+    const newConcepto=editForm.concepto.trim();
+    if(!newConcepto) return;
+
+    const montoIgual=newMonto===n(editEntry.monto);
+
+    if(editEntry.pagoId&&!montoIgual){
+      // Re-dispersión completa del lote
+      const obra=obras&&obras.find(o=>o.id===editEntry.obraId);
+      if(obra){
+        const nuevoDiv=calcDisp(newMonto,obra.m2,obra,cfg);
+        if(nuevoDiv){
+          const pid=editEntry.pagoId;
+          const cajaSinLote=caja.filter(e=>e.pagoId!==pid);
+          const nuevasEntradas=[
+            {id:uid(),pagoId:pid,tipo:"matPrima",    monto:nuevoDiv.matPrima,    concepto:`Mat.Prima — ${obra.nombre}`,    fecha:editEntry.fecha,obraId:obra.id},
+            {id:uid(),pagoId:pid,tipo:"nomina",      monto:nuevoDiv.nomina,      concepto:`Nómina — ${obra.nombre}`,       fecha:editEntry.fecha,obraId:obra.id},
+            {id:uid(),pagoId:pid,tipo:"costosFijos", monto:nuevoDiv.costosFijos, concepto:`Costos Fijos — ${obra.nombre}`, fecha:editEntry.fecha,obraId:obra.id},
+            ...(nuevoDiv.inversion>0?[{id:uid(),pagoId:pid,tipo:"inversion",monto:nuevoDiv.inversion,concepto:`Fondo Crec. — ${obra.nombre}`,fecha:editEntry.fecha,obraId:obra.id}]:[]),
+            {id:uid(),pagoId:pid,tipo:"utilLibre",   monto:nuevoDiv.utilLibre,   concepto:`Utilidad — ${obra.nombre}`,    fecha:editEntry.fecha,obraId:obra.id},
+          ];
+          saveCaja([...cajaSinLote,...nuevasEntradas]);
+          // Actualizar pagosKaston en la obra
+          if(saveObras) saveObras(obras.map(o=>o.id===obra.id?{...o,pagosKaston:(o.pagosKaston||[]).map(p=>(p.pagoId===pid||p.id===pid)?{...p,monto:newMonto,desglose:nuevoDiv}:p)}:o));
+        }
+      }
+    } else {
+      // Actualización directa de concepto y/o monto
+      saveCaja(caja.map(e=>e.id===editEntry.id?{...e,concepto:newConcepto,...(newMonto?{monto:newMonto}:{})}:e));
+    }
+    setEditSh(false); setEditEntry(null);
   };
 
   const recuperar=d=>{
@@ -1108,7 +1149,15 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas}){
               <span className={`text-sm font-semibold flex-shrink-0 ${e.tipo==="gastoManual"?"text-red-400":tipoColor[e.tipo]||"text-gray-400"}`}>
                 {e.tipo==="gastoManual"?"–":"+"}{ fmt(e.monto)}
               </span>
-              {e.manual&&<button onClick={()=>del(e.id)} className="text-red-600 text-xl ml-1 flex-shrink-0 leading-none">×</button>}
+              {/* Lápiz: editar */}
+              <button onClick={()=>abrirEdit(e)}
+                className="flex-shrink-0 w-7 h-7 rounded-lg bg-gray-800 flex items-center justify-center text-gray-400 hover:text-orange-400 transition-colors active:scale-90 ml-1">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </button>
+              {/* X: eliminar (solo entradas manuales) */}
+              {e.manual&&<button onClick={()=>del(e.id)} className="text-red-600 text-xl flex-shrink-0 leading-none">×</button>}
             </div>
           ))}
         </div>
@@ -1171,6 +1220,53 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas}){
           ))}
         </>
       )}
+
+      {/* ── Sheet: Editar entrada ────────────────── */}
+      <Sheet open={editSh} onClose={()=>{setEditSh(false);setEditEntry(null);}} title="Editar movimiento">
+        {editEntry&&(
+          <>
+            <p className="text-xs text-gray-500 mb-4">
+              Tipo: <span className={tipoColor[editEntry.tipo]||"text-gray-400"}>{tipoLabel[editEntry.tipo]||editEntry.tipo}</span>
+              {editEntry.pagoId&&<span className="text-blue-500 ml-2">· Pago con divisor — ajustar valor redistribuye las bolsas</span>}
+            </p>
+            <div className="mb-3">
+              <label className="block text-xs text-gray-400 mb-1">Nombre / Descripción</label>
+              <input className={ic} value={editForm.concepto}
+                onChange={e=>setEditForm({...editForm,concepto:e.target.value})} placeholder="Descripción"/>
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs text-gray-400 mb-1">
+                Valor en pesos ${editEntry.pagoId?" (ajusta el monto TOTAL del pago — redistribuye las bolsas)":""}
+              </label>
+              <input className={ic} type="number" value={editForm.monto}
+                onChange={e=>setEditForm({...editForm,monto:e.target.value})} placeholder="0"/>
+              {editEntry.pagoId&&n(editForm.monto)!==n(editEntry.monto)&&n(editForm.monto)>0&&(()=>{
+                const obra=obras&&obras.find(o=>o.id===editEntry.obraId);
+                const d=obra?calcDisp(n(editForm.monto),obra.m2,obra,cfg):null;
+                if(!d) return null;
+                return(
+                  <div className="card rounded-xl p-3 mt-2">
+                    <p className="text-[10px] text-gray-400 uppercase mb-2">Nueva dispersión</p>
+                    {[
+                      {l:"Mat. Prima",   v:d.matPrima,    c:"text-yellow-400"},
+                      {l:"Nómina",       v:d.nomina,      c:"text-orange-400"},
+                      {l:"Costos Fijos", v:d.costosFijos, c:"text-red-400"},
+                      {l:"Fondo Crec.",  v:d.inversion,   c:"text-blue-400"},
+                      {l:"Utilidad",     v:d.utilLibre,   c:"text-green-400"},
+                    ].map(({l,v,c})=>(
+                      <div key={l} className="flex justify-between text-xs py-0.5">
+                        <span className="text-gray-500">{l}</span>
+                        <span className={`font-semibold ${c}`}>{fmt(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+            <PBtn onClick={guardarEdit}>Guardar cambios</PBtn>
+          </>
+        )}
+      </Sheet>
 
       {/* ── Sheet: Egreso Manual ──────────────────── */}
       <Sheet open={sh} onClose={()=>setSh(false)} title="Registrar Egreso Manual">
@@ -1460,7 +1556,7 @@ function App(){
       <div className="flex-1 pb-24 fade-in">
         {tab===0&&<ProyectosTab obras={obras} saveObras={saveObr} clientes={clientes} config={config} caja={caja} saveCaja={saveCaja}/>}
         {tab===1&&<ComisionesTab obras={obras} saveObras={saveObr} config={config}/>}
-        {tab===2&&<CajaTab caja={caja} saveCaja={saveCaja} deudas={deudas} saveDeudas={saveDeudas}/>}
+        {tab===2&&<CajaTab caja={caja} saveCaja={saveCaja} deudas={deudas} saveDeudas={saveDeudas} obras={obras} saveObras={saveObr} config={config}/>}
       </div>
 
       <div className="tab-bar safe-bottom fixed bottom-0 flex no-select"
