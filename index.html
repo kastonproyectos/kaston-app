@@ -1074,12 +1074,17 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
 
   // Deuda directa (ya está en la calle — NO resta Balance al crearla)
   const [deudaSh,setDeudaSh]=useState(false);
-  const blankDeuda={quien:"",concepto:"",monto:""};
+  const blankDeuda={quien:"",concepto:"",monto:"",tipoDeuda:"externa"};
   const [fd,setFd]=useState(blankDeuda);
 
   const agregarDeuda=()=>{
     if(!fd.quien.trim()||!n(fd.monto)) return;
-    saveDeudas(prev=>[...prev,{id:uid(),quien:fd.quien.trim(),concepto:fd.concepto.trim(),monto:n(fd.monto),fecha:hoy(),recuperado:false,fechaRecuperado:"",tipo:"directa"}]);
+    const m=n(fd.monto);
+    saveDeudas(prev=>[...prev,{id:uid(),quien:fd.quien.trim(),concepto:fd.concepto.trim(),monto:m,fecha:hoy(),recuperado:false,fechaRecuperado:"",tipoDeuda:fd.tipoDeuda}]);
+    if(fd.tipoDeuda==="prestamo"){
+      // Sale de la cuenta hoy → resta del Balance Disponible
+      saveCaja(prev=>[...prev,{id:uid(),tipo:"gastoManual",deBolsa:"disponible",monto:m,concepto:`Préstamo — ${fd.quien.trim()}`,fecha:hoy(),manual:true}]);
+    }
     setFd(blankDeuda); setDeudaSh(false);
   };
 
@@ -1244,11 +1249,34 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
         </>
       )}
 
-      {/* ── Sheet: Agregar Deuda (sin restar Balance) ── */}
+      {/* ── Sheet: Agregar Deuda ─────────────────── */}
       <Sheet open={deudaSh} onClose={()=>{setDeudaSh(false);setFd(blankDeuda);}} title="Agregar Deuda a Favor">
-        <div className="rounded-xl p-3 bg-orange-900/20 border border-orange-700/30 mb-4">
-          <p className="text-xs text-orange-300 font-semibold mb-1">💡 Plata que ya está en la calle</p>
-          <p className="text-xs text-orange-200">Al agregar esta deuda NO se resta nada del Balance. Solo se registra para el control. Al marcarla como recuperada, el valor SÍ sumará al Balance Disponible.</p>
+        {/* Selector de tipo */}
+        <div className="mb-4">
+          <label className="block text-xs text-gray-400 mb-2">Tipo de Deuda *</label>
+          <div className="flex flex-col gap-2">
+            {[
+              {v:"prestamo", l:"Plata que presté (Sale de la cuenta hoy)",    sub:"Resta el Balance Disponible al guardar",      bg:"bg-red-900/20 border-red-700/40",    sel:"border-red-500 bg-red-900/30"},
+              {v:"externa",  l:"Plata que me deben (Externa / Antigua)",       sub:"No altera el Balance — solo registra el cobro pendiente", bg:"bg-blue-900/20 border-blue-700/40", sel:"border-blue-500 bg-blue-900/30"},
+            ].map(({v,l,sub,bg,sel})=>(
+              <button key={v} onClick={()=>setFd({...fd,tipoDeuda:v})}
+                className={`w-full text-left px-4 py-3 rounded-xl border-2 transition ${fd.tipoDeuda===v?sel:bg+" border-transparent"}`}>
+                <p className={`text-sm font-semibold ${fd.tipoDeuda===v?"text-white":"text-gray-300"}`}>{l}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{sub}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Nota dinámica */}
+        <div className={`rounded-xl p-3 mb-4 ${fd.tipoDeuda==="prestamo"?"bg-red-900/20 border border-red-700/30":"bg-blue-900/20 border border-blue-700/30"}`}>
+          <p className={`text-xs font-semibold mb-0.5 ${fd.tipoDeuda==="prestamo"?"text-red-300":"text-blue-300"}`}>
+            {fd.tipoDeuda==="prestamo"?"⬇ Salida de dinero hoy":"💡 Plata que ya está en la calle"}
+          </p>
+          <p className="text-xs text-gray-400">
+            {fd.tipoDeuda==="prestamo"
+              ?"Al guardar se resta del Balance Disponible. Al recuperar, sumará de vuelta."
+              :"Al guardar NO se toca el Balance. Al recuperar, SÍ sumará al Balance Disponible."}
+          </p>
         </div>
         <div className="mb-3">
           <label className="block text-xs text-gray-400 mb-1">Nombre del Deudor *</label>
