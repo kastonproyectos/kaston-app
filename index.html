@@ -1072,9 +1072,21 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
     setEditSh(false); setEditEntry(null);
   };
 
+  // Deuda directa (ya está en la calle — NO resta Balance al crearla)
+  const [deudaSh,setDeudaSh]=useState(false);
+  const blankDeuda={quien:"",concepto:"",monto:""};
+  const [fd,setFd]=useState(blankDeuda);
+
+  const agregarDeuda=()=>{
+    if(!fd.quien.trim()||!n(fd.monto)) return;
+    saveDeudas(prev=>[...prev,{id:uid(),quien:fd.quien.trim(),concepto:fd.concepto.trim(),monto:n(fd.monto),fecha:hoy(),recuperado:false,fechaRecuperado:"",tipo:"directa"}]);
+    setFd(blankDeuda); setDeudaSh(false);
+  };
+
   const recuperar=d=>{
     saveDeudas(deudas.map(x=>x.id===d.id?{...x,recuperado:true,fechaRecuperado:hoy()}:x));
-    saveCaja(prev=>[...prev,{id:uid(),tipo:"utilLibre",monto:d.monto,concepto:`Recuperado — ${d.quien}`,fecha:hoy()}]);
+    // Suma al Balance Disponible sin pasar por el divisor — liquidez directa
+    saveCaja(prev=>[...prev,{id:uid(),tipo:"utilLibre",monto:n(d.monto),concepto:`Recuperado — ${d.quien}`,fecha:hoy()}]);
   };
 
   const del=id=>saveCaja(caja.filter(e=>e.id!==id));
@@ -1165,12 +1177,16 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
       {caja.length===0&&<p className="text-gray-600 text-sm text-center mt-8 mb-6">Sin movimientos. Los pagos aparecen aquí al registrarlos en cada proyecto.</p>}
 
       {/* ═══ PLANTA BAJA — Tu dinero en la calle ════ */}
-      <div className="border-t border-white/5 pt-5 mb-3">
-        <p className="section-label mb-3">📑 Deudas a Favor / Por Recuperar</p>
+      <div className="border-t border-white/5 pt-5 mb-3 flex justify-between items-center">
+        <p className="section-label">📑 Deudas a Favor / Por Recuperar</p>
+        <button onClick={()=>setDeudaSh(true)}
+          className="btn-primary px-4 py-2 rounded-xl text-xs font-bold text-white flex items-center gap-1">
+          <span className="text-base font-black leading-none">+</span> Agregar Deuda
+        </button>
       </div>
 
       {pendientes.length===0&&recuperadas.length===0&&(
-        <p className="text-gray-600 text-xs text-center mb-4">Sin deudas registradas. Usa "Préstamo / Cuenta por Cobrar" en el formulario de egresos.</p>
+        <p className="text-gray-600 text-xs text-center mb-4">Sin deudas registradas. Toca "+ Agregar Deuda" para registrar plata que ya está en la calle.</p>
       )}
 
       {/* Total en la calle + lista */}
@@ -1220,6 +1236,27 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
           ))}
         </>
       )}
+
+      {/* ── Sheet: Agregar Deuda (sin restar Balance) ── */}
+      <Sheet open={deudaSh} onClose={()=>{setDeudaSh(false);setFd(blankDeuda);}} title="Agregar Deuda a Favor">
+        <div className="rounded-xl p-3 bg-orange-900/20 border border-orange-700/30 mb-4">
+          <p className="text-xs text-orange-300 font-semibold mb-1">💡 Plata que ya está en la calle</p>
+          <p className="text-xs text-orange-200">Al agregar esta deuda NO se resta nada del Balance. Solo se registra para el control. Al marcarla como recuperada, el valor SÍ sumará al Balance Disponible.</p>
+        </div>
+        <div className="mb-3">
+          <label className="block text-xs text-gray-400 mb-1">Nombre del Deudor *</label>
+          <input className={ic} value={fd.quien} onChange={e=>setFd({...fd,quien:e.target.value})} placeholder="¿Quién te debe?"/>
+        </div>
+        <div className="mb-3">
+          <label className="block text-xs text-gray-400 mb-1">Concepto</label>
+          <input className={ic} value={fd.concepto} onChange={e=>setFd({...fd,concepto:e.target.value})} placeholder="Ej: Préstamo personal, adelanto materiales…"/>
+        </div>
+        <div className="mb-4">
+          <label className="block text-xs text-gray-400 mb-1">Valor en pesos $ *</label>
+          <input className={ic} type="number" value={fd.monto} onChange={e=>setFd({...fd,monto:e.target.value})} placeholder="0"/>
+        </div>
+        <PBtn onClick={agregarDeuda}>Agregar Deuda</PBtn>
+      </Sheet>
 
       {/* ── Sheet: Editar entrada ────────────────── */}
       <Sheet open={editSh} onClose={()=>{setEditSh(false);setEditEntry(null);}} title="Editar movimiento">
