@@ -70,9 +70,11 @@ const DEF_CFG = {
   costoTrabajador:  270,     // COP por teja
   costoArriendo:    70,      // COP por teja
   costoLuz:         133,     // COP por teja
-  precioSoloTejaM2: 85000,   // precio al cliente — Solo Teja
-  precioTodoCostoM2:106623,  // precio al cliente — Todo Costo
-  precioMallaRollo: 262700,  // precio rollo malla al cliente
+  precioSoloTejaM2:    85000,  // precio al cliente — Solo Teja
+  precioTodoCostoM2:  106623,  // precio al cliente — Todo Costo
+  precioMallaRollo:   262700,  // precio rollo malla al cliente
+  precioInstaladorM2:  15000,  // mano de obra instalación pagada al instalador (en Todo Costo)
+  costoMallaRolloCompra:262700,// costo real de comprar un rollo de malla
   pctInversion:     15,      // % de utilidad neta → Fondo Crecimiento
   pctComisionJG:    10,      // % sobre pago JG → comisión Kaston
   pctComisionHerm:  10,      // % sobre pago Hermilson → comisión Kaston
@@ -306,11 +308,53 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
     <div className="p-4 fade-in" style={{paddingBottom:"calc(env(safe-area-inset-bottom)+96px)"}}>
       <Volver titulo={o.nombre} sub={o.cliente?"Cliente: "+o.cliente:o.direccion||""} onBack={onBack}/>
 
-      <div className="flex items-center gap-2 mb-5 flex-wrap">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
         <Badge s={o.estado||"Por iniciar"}/>
         {(()=>{const r=RUTAS[getRuta(o)];return r&&<span className={`text-xs px-2 py-0.5 rounded-full text-white font-semibold ${r.color}`}>{r.label}</span>;})()}
         <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{tipo}</span>
-        {m2>0&&<span className="text-xs text-gray-500">{m2} m² · {tejasTotales.toLocaleString()} tejas</span>}
+      </div>
+
+      {/* ── Editor de m² inline ───────────────────── */}
+      <div className="card rounded-2xl p-4 mb-4">
+        <div className="flex items-center gap-3">
+          <div className="flex-1">
+            <label className="block text-xs text-gray-400 mb-1">Metros cuadrados (m²) de la obra</label>
+            <input className={ic} type="number" placeholder="0"
+              value={o.m2||""} onChange={e=>upd({m2:e.target.value})}/>
+          </div>
+          {m2>0&&(
+            <div className="text-right flex-shrink-0">
+              <p className="text-[9px] text-gray-500 uppercase">Tejas</p>
+              <p className="text-sm font-bold text-white">{tejasTotales.toLocaleString()}</p>
+            </div>
+          )}
+        </div>
+        {m2>0&&tipo==="Todo Costo"&&(()=>{
+          const instTotal = m2*(cfg.precioInstaladorM2||15000);
+          const mallaCosto= Math.ceil(m2/M2_ROLLO)*(cfg.costoMallaRolloCompra||262700);
+          const margen    = ventaTejas - m2*(cfg.precioSoloTejaM2||85000) - instTotal - mallaCosto;
+          return(
+            <div className="mt-3 border-t border-white/5 pt-3">
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Desglose Todo Costo — {fmt(ventaTejas)} total</p>
+              <div className="space-y-1.5">
+                {[
+                  {l:"Teja KASTON (ingresa a caja)",      v:m2*(cfg.precioSoloTejaM2||85000), c:"text-green-400",  sub:`${m2} m² × ${fmt(cfg.precioSoloTejaM2||85000)}`},
+                  {l:"Mano de obra instalación (instalador)",v:instTotal,                       c:"text-orange-400", sub:`${m2} m² × ${fmt(cfg.precioInstaladorM2||15000)}`},
+                  {l:`Malla electrosoldada (${Math.ceil(m2/M2_ROLLO)} rollo${Math.ceil(m2/M2_ROLLO)!==1?"s":""})`,v:mallaCosto,c:"text-yellow-400",sub:`${Math.ceil(m2/M2_ROLLO)} × ${fmt(cfg.costoMallaRolloCompra||262700)}/rollo`},
+                ].map(({l,v,c,sub})=>(
+                  <div key={l} className="flex justify-between items-start">
+                    <div><p className="text-xs text-gray-300">{l}</p><p className="text-[10px] text-gray-600">{sub}</p></div>
+                    <span className={`text-xs font-bold flex-shrink-0 ml-2 ${c}`}>{fmt(v)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between pt-1.5 border-t border-white/5">
+                  <span className="text-xs text-gray-500">Margen restante Kaston</span>
+                  <span className={`text-xs font-bold ${margen>=0?"text-white":"text-red-400"}`}>{fmt(margen)}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* ══ A — SECCIÓN KASTON ═══════════════════════ */}
@@ -1440,12 +1484,12 @@ function ConfigSheet({open,onClose,config,saveConfig,obras,clientes}){
       </div>
 
       {/* Precios de venta */}
-      <p className="section-label mb-2">Precios de venta</p>
+      <p className="section-label mb-2">Precios de venta al cliente</p>
       <div className="card rounded-2xl p-4 mb-4">
         {[
-          {k:"precioSoloTejaM2",  l:"Solo Teja (por m²)",            def:85000},
-          {k:"precioTodoCostoM2", l:"Todo Costo (por m²)",           def:106623},
-          {k:"precioMallaRollo",  l:"Malla Electrosoldada (por rollo)",def:262700},
+          {k:"precioSoloTejaM2",  l:"Solo Teja (por m²)",             def:85000},
+          {k:"precioTodoCostoM2", l:"Todo Costo (por m²)",            def:106623},
+          {k:"precioMallaRollo",  l:"Malla Electrosoldada al cliente (por rollo)",def:262700},
         ].map(({k,l,def})=>(
           <div key={k} className="flex items-center gap-3 mb-3 last:mb-0">
             <div className="flex-1">
@@ -1460,6 +1504,43 @@ function ConfigSheet({open,onClose,config,saveConfig,obras,clientes}){
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Costos internos Todo Costo */}
+      <p className="section-label mb-2">Costos internos — Todo Costo</p>
+      <div className="card rounded-2xl p-4 mb-4">
+        {[
+          {k:"precioInstaladorM2",   l:"Mano de obra instalación (por m²)", def:15000,  sub:"Lo que le pagas al instalador"},
+          {k:"costoMallaRolloCompra",l:"Costo de compra malla (por rollo)",  def:262700, sub:"Lo que te cuesta comprarlo"},
+        ].map(({k,l,def,sub})=>(
+          <div key={k} className="flex items-center gap-3 mb-3 last:mb-0">
+            <div className="flex-1">
+              <p className="text-sm text-gray-200">{l}</p>
+              <p className="text-[10px] text-gray-600">{sub} · Default: ${def.toLocaleString("es-CO")}</p>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-gray-500 text-xs">$</span>
+              <input type="number" min="0"
+                className="w-24 bg-black/30 rounded-xl px-2 py-1.5 text-white text-sm text-right outline-none focus:ring-1 focus:ring-orange-500"
+                value={cfg[k]||""} onChange={e=>setCfg(k,e.target.value)}/>
+            </div>
+          </div>
+        ))}
+        {/* Resumen Todo Costo */}
+        {(()=>{
+          const inst=cfg.precioInstaladorM2||15000;
+          const teja=cfg.precioSoloTejaM2||85000;
+          const malla=(cfg.costoMallaRolloCompra||262700)/M2_ROLLO;
+          const total=cfg.precioTodoCostoM2||106623;
+          const margen=total-teja-inst-malla;
+          return(
+            <div className="border-t border-white/5 pt-2 mt-2 space-y-1">
+              <div className="flex justify-between text-xs"><span className="text-gray-500">Teja + Instalador + Malla/m²</span><span className="text-gray-400">{fmt(teja+inst+malla)}/m²</span></div>
+              <div className="flex justify-between text-xs"><span className="text-gray-500">Precio Todo Costo</span><span className="text-white">{fmt(total)}/m²</span></div>
+              <div className="flex justify-between text-xs font-bold"><span className={margen>=0?"text-green-400":"text-red-400"}>Margen Kaston / m²</span><span className={margen>=0?"text-green-400":"text-red-400"}>{fmt(margen)}</span></div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Porcentajes */}
