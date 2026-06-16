@@ -766,15 +766,17 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
                 <span className="text-gray-200">= Utilidad Neta</span>
                 <span className={div.utilNeta>=0?"text-green-400":"text-red-400"}>{fmt(div.utilNeta)}</span>
               </div>
-              <div className="py-2 border-b border-white/5">
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-400">— Fondo de Crecimiento</span>
-                  <span className="text-sm font-semibold text-blue-400">{fmt(div.inversion)}</span>
+              {cfg.pctInversion>0&&(
+                <div className="py-2 border-b border-white/5">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-gray-400">— Fondo de Crecimiento</span>
+                    <span className="text-sm font-semibold text-blue-400">{fmt(div.inversion)}</span>
+                  </div>
+                  <p className="text-[10px] text-gray-600">{cfg.pctInversion}% de la utilidad neta — no se toca</p>
                 </div>
-                <p className="text-[10px] text-gray-600">{cfg.pctInversion}% de la utilidad neta — no se toca</p>
-              </div>
+              )}
               <div className="flex justify-between py-3 font-black text-base">
-                <span className="text-white">= Utilidad Libre</span>
+                <span className="text-white">= {cfg.pctInversion>0?"Utilidad Libre":"Balance Disponible"}</span>
                 <span className={div.utilLibre>=0?"text-green-400":"text-red-400"}>{fmt(div.utilLibre)}</span>
               </div>
             </div>
@@ -1547,7 +1549,7 @@ function ConfigSheet({open,onClose,config,saveConfig,obras,clientes}){
       <p className="section-label mb-2">Porcentajes</p>
       <div className="card rounded-2xl p-4 mb-4">
         {[
-          {k:"pctInversion",   l:"Fondo de Crecimiento",       sub:"% de la utilidad neta con cada pago"},
+          {k:"pctInversion",   l:"Fondo de Crecimiento",       sub:"% de la utilidad neta · 0% = va al balance disponible"},
           {k:"pctComisionJG",  l:"Comisión Juan Guillermo",    sub:"% del valor que cobra al cliente"},
           {k:"pctComisionHerm",l:"Comisión Hermilson",         sub:"% del valor que cobra al cliente"},
         ].map(({k,l,sub})=>(
