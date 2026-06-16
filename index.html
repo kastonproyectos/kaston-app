@@ -15,7 +15,7 @@
   <title>Kaston</title>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js" crossorigin></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config={theme:{extend:{colors:{orange:{'50':'#fdf6ec','100':'#f9e9cc','200':'#f0d090','300':'#D4A04E','400':'#C08C3A','500':'#B87333','600':'#9A5C2A','700':'#7C4620','800':'#5E3418','900':'#42240F'}}}}}</script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
@@ -1440,7 +1440,7 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
 // ── ConfigSheet ───────────────────────────────────────────────
 function ConfigSheet({open,onClose,config,saveConfig,obras,clientes}){
   const cfg={...DEF_CFG,...config};
-  const setCfg=(k,v)=>saveConfig({...cfg,[k]:parseFloat(v)||0});
+  const setCfg=(k,v)=>{const num=parseFloat(v);saveConfig({...cfg,[k]:isNaN(num)?0:num});};
   const costoTotal=(cfg.costoMaterial||0)+(cfg.costoTrabajador||0)+(cfg.costoArriendo||0)+(cfg.costoLuz||0);
   const margenSoloTeja=cfg.precioSoloTejaM2/TEJAS_M2-costoTotal;
 
@@ -1465,7 +1465,7 @@ function ConfigSheet({open,onClose,config,saveConfig,obras,clientes}){
               <span className="text-gray-500 text-xs">$</span>
               <input type="number" min="0"
                 className="w-20 bg-black/30 rounded-xl px-2 py-1.5 text-white text-sm text-right outline-none focus:ring-1 focus:ring-orange-500"
-                value={cfg[k]||""} onChange={e=>setCfg(k,e.target.value)}/>
+                value={cfg[k]===0?"0":(cfg[k]||"")} onChange={e=>setCfg(k,e.target.value)}/>
             </div>
           </div>
         ))}
@@ -1500,7 +1500,7 @@ function ConfigSheet({open,onClose,config,saveConfig,obras,clientes}){
               <span className="text-gray-500 text-xs">$</span>
               <input type="number" min="0"
                 className="w-24 bg-black/30 rounded-xl px-2 py-1.5 text-white text-sm text-right outline-none focus:ring-1 focus:ring-orange-500"
-                value={cfg[k]||""} onChange={e=>setCfg(k,e.target.value)}/>
+                value={cfg[k]===0?"0":(cfg[k]||"")} onChange={e=>setCfg(k,e.target.value)}/>
             </div>
           </div>
         ))}
@@ -1522,7 +1522,7 @@ function ConfigSheet({open,onClose,config,saveConfig,obras,clientes}){
               <span className="text-gray-500 text-xs">$</span>
               <input type="number" min="0"
                 className="w-24 bg-black/30 rounded-xl px-2 py-1.5 text-white text-sm text-right outline-none focus:ring-1 focus:ring-orange-500"
-                value={cfg[k]||""} onChange={e=>setCfg(k,e.target.value)}/>
+                value={cfg[k]===0?"0":(cfg[k]||"")} onChange={e=>setCfg(k,e.target.value)}/>
             </div>
           </div>
         ))}
@@ -1559,7 +1559,7 @@ function ConfigSheet({open,onClose,config,saveConfig,obras,clientes}){
             <div className="flex items-center gap-1">
               <input type="number" min="0" max="100" step="5"
                 className="w-16 bg-black/30 rounded-xl px-2 py-1.5 text-white text-sm text-center outline-none focus:ring-1 focus:ring-orange-500"
-                value={cfg[k]||""} onChange={e=>setCfg(k,e.target.value)}/>
+                value={cfg[k]===0?"0":(cfg[k]||"")} onChange={e=>setCfg(k,e.target.value)}/>
               <span className="text-gray-400 text-sm">%</span>
             </div>
           </div>
@@ -1733,7 +1733,26 @@ function App(){
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+class ErrorBoundary extends React.Component{
+  constructor(p){super(p);this.state={err:false};}
+  static getDerivedStateFromError(){return{err:true};}
+  render(){
+    if(this.state.err)return(
+      <div style={{background:"#080808",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,textAlign:"center"}}>
+        <div style={{background:"linear-gradient(135deg,#C08C3A,#9A5C2A)",width:56,height:56,borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:900,color:"white",marginBottom:16}}>K</div>
+        <p style={{color:"white",fontWeight:700,marginBottom:8}}>Algo salió mal</p>
+        <p style={{color:"#6b7280",fontSize:13,marginBottom:24}}>Hubo un error al cargar la app. Toca el botón para recuperarla.</p>
+        <button onClick={()=>{try{localStorage.removeItem("kaston_config");}catch{}window.location.reload();}}
+          style={{background:"linear-gradient(135deg,#C08C3A,#9A5C2A)",color:"white",border:"none",borderRadius:14,padding:"14px 28px",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+          Recuperar app
+        </button>
+        <p style={{color:"#374151",fontSize:11,marginTop:16}}>Solo borra la configuración de ajustes — tus proyectos y caja están seguros.</p>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App/></ErrorBoundary>);
 </script>
 </body>
 </html>
