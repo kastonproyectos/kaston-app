@@ -130,13 +130,16 @@ function calcDisp(monto,m2,o,cfg){
   if(!total||!n(monto)) return null;
   const ratio=n(monto)/total;
   const tejas=ratio*n(m2)*TEJAS_M2;
-  const matPrima    =tejas*(cfg.costoMaterial   ||600);
-  const nomina      =tejas*(cfg.costoTrabajador  ||270);
-  const costosFijos =tejas*((cfg.costoArriendo||70)+(cfg.costoLuz||133));
-  const totalCostos =matPrima+nomina+costosFijos;
-  const utilNeta    =n(monto)-totalCostos;
-  const inversion   =Math.max(0,utilNeta)*(cfg.pctInversion||0)/100;
-  return {tejas,matPrima,nomina,costosFijos,totalCostos,utilNeta,inversion,utilLibre:utilNeta-inversion};
+  const matPrima        =tejas*(cfg.costoMaterial   ||600);
+  const nomina          =tejas*(cfg.costoTrabajador  ||270);
+  const costosFijos     =tejas*((cfg.costoArriendo||70)+(cfg.costoLuz||133));
+  const esTodoCosto     =getTipo(o)==="Todo Costo";
+  const pagoInstalador  =esTodoCosto?ratio*n(m2)*(cfg.precioInstaladorM2||15000):0;
+  const costoMallaElectro=esTodoCosto?ratio*Math.ceil(n(m2)/M2_ROLLO)*(cfg.costoMallaRolloCompra||262700):0;
+  const totalCostos     =matPrima+nomina+costosFijos+pagoInstalador+costoMallaElectro;
+  const utilNeta        =n(monto)-totalCostos;
+  const inversion       =Math.max(0,utilNeta)*(cfg.pctInversion||0)/100;
+  return {tejas,matPrima,nomina,costosFijos,pagoInstalador,costoMallaElectro,totalCostos,utilNeta,inversion,utilLibre:utilNeta-inversion};
 }
 
 // Calcular rollos de malla necesarios
@@ -146,22 +149,27 @@ function calcRollos(m2,cfg){
 }
 
 // Calcular estado de bolsas desde caja
-function calcBolsas(caja){
-  const b={matPrima:0,nomina:0,costosFijos:0,inversion:0,disponible:0};
+function calcBolsas(caja,cfg){
+  const pctInv=cfg?(cfg.pctInversion||0):null;
+  const b={matPrima:0,nomina:0,costosFijos:0,inversion:0,disponible:0,pagoInstalador:0,costoMallaElectro:0};
   for(const e of caja){
     const m=n(e.monto);
-    if(e.tipo==="matPrima")    b.matPrima   +=m;
-    if(e.tipo==="nomina")      b.nomina      +=m;
-    if(e.tipo==="costosFijos") b.costosFijos +=m;
-    if(e.tipo==="inversion")   b.inversion   +=m;
-    if(e.tipo==="utilLibre")   b.disponible  +=m;
-    if(e.tipo==="mallas")      b.disponible  +=m;
+    if(e.tipo==="matPrima")        b.matPrima        +=m;
+    if(e.tipo==="nomina")          b.nomina           +=m;
+    if(e.tipo==="costosFijos")     b.costosFijos      +=m;
+    if(e.tipo==="inversion")       {if(pctInv===0)b.disponible+=m;else b.inversion+=m;}
+    if(e.tipo==="utilLibre")       b.disponible       +=m;
+    if(e.tipo==="mallas")          b.disponible       +=m;
+    if(e.tipo==="pagoInstalador")  b.pagoInstalador   +=m;
+    if(e.tipo==="costoMallaElectro")b.costoMallaElectro+=m;
     if(e.tipo==="gastoManual"){
-      if(e.deBolsa==="nomina")      b.nomina      -=m;
-      if(e.deBolsa==="matPrima")    b.matPrima    -=m;
-      if(e.deBolsa==="costosFijos") b.costosFijos -=m;
-      if(e.deBolsa==="inversion")   b.inversion   -=m;
-      if(e.deBolsa==="disponible")  b.disponible  -=m;
+      if(e.deBolsa==="nomina")           b.nomina           -=m;
+      if(e.deBolsa==="matPrima")         b.matPrima         -=m;
+      if(e.deBolsa==="costosFijos")      b.costosFijos      -=m;
+      if(e.deBolsa==="inversion")        b.inversion        -=m;
+      if(e.deBolsa==="disponible")       b.disponible       -=m;
+      if(e.deBolsa==="pagoInstalador")   b.pagoInstalador   -=m;
+      if(e.deBolsa==="costoMallaElectro")b.costoMallaElectro-=m;
     }
   }
   return b;
@@ -274,6 +282,8 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
       {id:uid(),pagoId:pid,tipo:"matPrima",    monto:div.matPrima,    concepto:`Mat.Prima — ${o.nombre}`,    fecha:hoy(),obraId:o.id},
       {id:uid(),pagoId:pid,tipo:"nomina",      monto:div.nomina,      concepto:`Nómina — ${o.nombre}`,       fecha:hoy(),obraId:o.id},
       {id:uid(),pagoId:pid,tipo:"costosFijos", monto:div.costosFijos, concepto:`Costos Fijos — ${o.nombre}`, fecha:hoy(),obraId:o.id},
+      ...(div.pagoInstalador>0?[{id:uid(),pagoId:pid,tipo:"pagoInstalador",monto:div.pagoInstalador,concepto:`Pago Instalador — ${o.nombre}`,fecha:hoy(),obraId:o.id}]:[]),
+      ...(div.costoMallaElectro>0?[{id:uid(),pagoId:pid,tipo:"costoMallaElectro",monto:div.costoMallaElectro,concepto:`Costo Malla Electrosoldada — ${o.nombre}`,fecha:hoy(),obraId:o.id}]:[]),
       ...(div.inversion>0?[{id:uid(),pagoId:pid,tipo:"inversion",monto:div.inversion,concepto:`Fondo Crec. — ${o.nombre}`,fecha:hoy(),obraId:o.id}]:[]),
       {id:uid(),pagoId:pid,tipo:"utilLibre",   monto:div.utilLibre,   concepto:`Utilidad — ${o.nombre}`,    fecha:hoy(),obraId:o.id},
     ]);
@@ -387,12 +397,14 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
                   <span className="text-green-400 font-bold">{fmt(p.monto)}</span>
                 </div>
                 {p.desglose&&(
-                  <div className="grid grid-cols-4 gap-1">
+                  <div className="grid grid-cols-3 gap-1">
                     {[
-                      {l:"Mat.Prima",v:p.desglose.matPrima,c:"text-yellow-400"},
-                      {l:"Nómina",   v:p.desglose.nomina,  c:"text-orange-400"},
-                      {l:"C.Fijos",  v:p.desglose.costosFijos,c:"text-red-400"},
-                      {l:"Inversión",v:p.desglose.inversion,c:"text-blue-400"},
+                      {l:"Mat.Prima",  v:p.desglose.matPrima,   c:"text-yellow-400"},
+                      {l:"Nómina",     v:p.desglose.nomina,     c:"text-orange-400"},
+                      {l:"C.Fijos",   v:p.desglose.costosFijos, c:"text-red-400"},
+                      ...(p.desglose.pagoInstalador>0?  [{l:"Instalador",v:p.desglose.pagoInstalador,  c:"text-orange-300"}]:[]),
+                      ...(p.desglose.costoMallaElectro>0?[{l:"Malla",    v:p.desglose.costoMallaElectro,c:"text-yellow-300"}]:[]),
+                      ...(p.desglose.inversion>0?        [{l:"Fondo Crec.",v:p.desglose.inversion,     c:"text-blue-400"}]:[]),
                     ].map(({l,v,c})=>(
                       <div key={l} className="bg-black/30 rounded-xl p-1.5 text-center">
                         <p className="text-[8px] text-gray-500">{l}</p>
@@ -753,6 +765,8 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
                 {l:"Bolsa Materia Prima",sub:`${Math.round(div.tejas).toLocaleString()} tejas × ${fmt(cfg.costoMaterial)}`,v:div.matPrima,c:"text-yellow-400"},
                 {l:"Bolsa Nómina Trabajador",sub:`× ${fmt(cfg.costoTrabajador)}/teja`,v:div.nomina,c:"text-orange-400"},
                 {l:"Bolsa Costos Fijos",sub:`× ${fmt((cfg.costoArriendo||70)+(cfg.costoLuz||133))}/teja (arr.+luz)`,v:div.costosFijos,c:"text-red-400"},
+                ...(div.pagoInstalador>0?[{l:"Pago Instalador",sub:`${m2} m² × ${fmt(cfg.precioInstaladorM2||15000)}/m²`,v:div.pagoInstalador,c:"text-orange-300"}]:[]),
+                ...(div.costoMallaElectro>0?[{l:"Costo Malla Electrosoldada",sub:`${Math.ceil(m2/M2_ROLLO)} rollos × ${fmt(cfg.costoMallaRolloCompra||262700)}/rollo`,v:div.costoMallaElectro,c:"text-yellow-300"}]:[]),
               ].map(({l,sub,v,c})=>(
                 <div key={l} className="py-2 border-b border-white/5">
                   <div className="flex justify-between">
@@ -1064,7 +1078,7 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
   const [f,setF]=useState(blank);
   const upd=k=>e=>setF({...f,[k]:e.target.value});
   const cfg={...DEF_CFG,...config};
-  const b=calcBolsas(caja);
+  const b=calcBolsas(caja,cfg);
   const esPrestamo=f.deBolsa==="prestamo";
 
   const guardar=()=>{
@@ -1103,6 +1117,8 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
             {id:uid(),pagoId:pid,tipo:"matPrima",    monto:nuevoDiv.matPrima,    concepto:`Mat.Prima — ${obra.nombre}`,    fecha:editEntry.fecha,obraId:obra.id},
             {id:uid(),pagoId:pid,tipo:"nomina",      monto:nuevoDiv.nomina,      concepto:`Nómina — ${obra.nombre}`,       fecha:editEntry.fecha,obraId:obra.id},
             {id:uid(),pagoId:pid,tipo:"costosFijos", monto:nuevoDiv.costosFijos, concepto:`Costos Fijos — ${obra.nombre}`, fecha:editEntry.fecha,obraId:obra.id},
+            ...(nuevoDiv.pagoInstalador>0?[{id:uid(),pagoId:pid,tipo:"pagoInstalador",monto:nuevoDiv.pagoInstalador,concepto:`Pago Instalador — ${obra.nombre}`,fecha:editEntry.fecha,obraId:obra.id}]:[]),
+            ...(nuevoDiv.costoMallaElectro>0?[{id:uid(),pagoId:pid,tipo:"costoMallaElectro",monto:nuevoDiv.costoMallaElectro,concepto:`Costo Malla Electrosoldada — ${obra.nombre}`,fecha:editEntry.fecha,obraId:obra.id}]:[]),
             ...(nuevoDiv.inversion>0?[{id:uid(),pagoId:pid,tipo:"inversion",monto:nuevoDiv.inversion,concepto:`Fondo Crec. — ${obra.nombre}`,fecha:editEntry.fecha,obraId:obra.id}]:[]),
             {id:uid(),pagoId:pid,tipo:"utilLibre",   monto:nuevoDiv.utilLibre,   concepto:`Utilidad — ${obra.nombre}`,    fecha:editEntry.fecha,obraId:obra.id},
           ];
@@ -1144,10 +1160,12 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
   const recientes=[...caja].sort((a,bx)=>(bx.fecha||"").localeCompare(a.fecha||"")).slice(0,25);
 
   const tipoLabel={matPrima:"Mat. Prima",nomina:"Nómina",costosFijos:"C. Fijos",
-    inversion:"Fondo Crec.",utilLibre:"Ingreso/Ret.",mallas:"Mallas",gastoManual:"Egreso",ingreso:"Ingreso"};
+    inversion:"Fondo Crec.",utilLibre:"Ingreso/Ret.",mallas:"Mallas",gastoManual:"Egreso",ingreso:"Ingreso",
+    pagoInstalador:"P.Instalador",costoMallaElectro:"Malla Electro"};
   const tipoColor={matPrima:"text-yellow-400",nomina:"text-orange-400",costosFijos:"text-red-400",
     inversion:"text-blue-400",utilLibre:"text-green-400",mallas:"text-green-400",
-    gastoManual:"text-red-400",ingreso:"text-green-300"};
+    gastoManual:"text-red-400",ingreso:"text-green-300",
+    pagoInstalador:"text-orange-300",costoMallaElectro:"text-yellow-300"};
 
   const pendientes=(deudas||[]).filter(d=>!d.recuperado);
   const recuperadas=(deudas||[]).filter(d=>d.recuperado);
@@ -1182,12 +1200,32 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
         ))}
       </div>
 
-      <div className="rounded-2xl p-4 mb-4"
-        style={{background:"linear-gradient(135deg,#0a1930,#091228)",border:"1px solid rgba(59,130,246,0.25)"}}>
-        <p className="text-[10px] text-blue-400 uppercase tracking-widest mb-0.5">Fondo de Crecimiento / Futura Maquinaria</p>
-        <p className="text-3xl font-black text-blue-100">{fmt(b.inversion)}</p>
-        <p className="text-xs text-blue-800 mt-1">Esta plata no se toca — se acumula con cada venta</p>
-      </div>
+      {cfg.pctInversion>0&&(
+        <div className="rounded-2xl p-4 mb-4"
+          style={{background:"linear-gradient(135deg,#0a1930,#091228)",border:"1px solid rgba(59,130,246,0.25)"}}>
+          <p className="text-[10px] text-blue-400 uppercase tracking-widest mb-0.5">Fondo de Crecimiento / Futura Maquinaria</p>
+          <p className="text-3xl font-black text-blue-100">{fmt(b.inversion)}</p>
+          <p className="text-xs text-blue-800 mt-1">Esta plata no se toca — se acumula con cada venta</p>
+        </div>
+      )}
+      {(b.pagoInstalador>0||b.costoMallaElectro>0)&&(
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          {b.pagoInstalador>0&&(
+            <div className="rounded-2xl p-3 bg-orange-900/20 border border-orange-700/30">
+              <p className="text-[9px] text-gray-400 uppercase leading-tight mb-0.5">Pago Instalador</p>
+              <p className="text-[9px] text-gray-600 mb-1">Mano de obra</p>
+              <p className="text-sm font-black text-orange-300">{fmt(b.pagoInstalador)}</p>
+            </div>
+          )}
+          {b.costoMallaElectro>0&&(
+            <div className="rounded-2xl p-3 bg-yellow-900/20 border border-yellow-700/30">
+              <p className="text-[9px] text-gray-400 uppercase leading-tight mb-0.5">Costo Malla</p>
+              <p className="text-[9px] text-gray-600 mb-1">Electrosoldada</p>
+              <p className="text-sm font-black text-yellow-300">{fmt(b.costoMallaElectro)}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Botón registrar egreso */}
       <div className="flex justify-between items-center mb-3">
@@ -1369,7 +1407,9 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
                       {l:"Mat. Prima",   v:d.matPrima,    c:"text-yellow-400"},
                       {l:"Nómina",       v:d.nomina,      c:"text-orange-400"},
                       {l:"Costos Fijos", v:d.costosFijos, c:"text-red-400"},
-                      {l:"Fondo Crec.",  v:d.inversion,   c:"text-blue-400"},
+                      ...(d.pagoInstalador>0?[{l:"Instalador",v:d.pagoInstalador,c:"text-orange-300"}]:[]),
+                      ...(d.costoMallaElectro>0?[{l:"Malla",v:d.costoMallaElectro,c:"text-yellow-300"}]:[]),
+                      ...(d.inversion>0?[{l:"Fondo Crec.",v:d.inversion,c:"text-blue-400"}]:[]),
                       {l:"Utilidad",     v:d.utilLibre,   c:"text-green-400"},
                     ].map(({l,v,c})=>(
                       <div key={l} className="flex justify-between text-xs py-0.5">
@@ -1398,6 +1438,8 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
             <option value="matPrima">Bolsa Materia Prima — compras de polímero</option>
             <option value="nomina">Bolsa Nómina Trabajador — pago al operario de tejas</option>
             <option value="costosFijos">Bolsa Gastos Fijos / Operación — arriendo, luz, SIM card…</option>
+            <option value="pagoInstalador">Bolsa Pago Instalador — mano de obra instalación</option>
+            <option value="costoMallaElectro">Bolsa Costo Malla Electrosoldada — compra material</option>
             <option value="inversion">Contador Azul (Fondo de Crecimiento / Inversión)</option>
             <option value="disponible">Utilidad Libre / Balance General — gastos imprevistos</option>
             <option value="prestamo">Préstamo / Cuenta por Cobrar</option>
