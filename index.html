@@ -1189,6 +1189,8 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
   }
   const bInstTotal=b.pagoInstalador+_dInst;
   const bMallTotal=b.costoMallaElectro+_dMall;
+  // Los pagos viejos tienen instalador+malla dentro de disponible — los sacamos
+  const bDisponible=b.disponible-_dInst-_dMall;
 
   const BOLSAS_DETALLE=[
     {k:"matPrima",          l:"Materia Prima",          sub:"Polímero",                                              c:"text-yellow-400",bg:"bg-yellow-900/20",bc:"border-yellow-700/30"},
@@ -1206,7 +1208,7 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
       <div className="rounded-2xl p-5 mb-4 text-center"
         style={{background:"linear-gradient(135deg,#081a0e,#0d2e16)",border:"1px solid rgba(34,197,94,0.2)"}}>
         <p className="text-xs text-green-400 uppercase tracking-widest mb-1">Balance Disponible</p>
-        <p className={`text-4xl font-black ${b.disponible>=0?"text-green-200":"text-red-400"}`}>{fmt(b.disponible)}</p>
+        <p className={`text-4xl font-black ${bDisponible>=0?"text-green-200":"text-red-400"}`}>{fmt(bDisponible)}</p>
         <p className="text-xs text-green-900 mt-1">Utilidad libre acumulada</p>
       </div>
 
@@ -1463,8 +1465,8 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
               nomina:     {l:"Bolsa Nómina",          v:b.nomina,      c:"text-orange-400"},
               costosFijos:{l:"Bolsa Costos Fijos",    v:b.costosFijos, c:"text-red-400"},
               inversion:  {l:"Fondo de Crecimiento", v:b.inversion,   c:"text-blue-400"},
-              disponible: {l:"Balance Disponible",    v:b.disponible,  c:"text-green-400"},
-              prestamo:   {l:"Balance Disponible",    v:b.disponible,  c:"text-green-400"},
+              disponible: {l:"Balance Disponible",    v:bDisponible,  c:"text-green-400"},
+              prestamo:   {l:"Balance Disponible",    v:bDisponible,  c:"text-green-400"},
             };
             const s=saldos[f.deBolsa];
             if(!s) return null;
