@@ -1171,12 +1171,31 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
   const recuperadas=(deudas||[]).filter(d=>d.recuperado);
   const totalDeuda=pendientes.reduce((s,d)=>s+n(d.monto),0);
 
+  // Instalador y Malla: combina entradas de caja (pagos nuevos) + cálculo dinámico
+  // para pagos viejos que no tienen esas entradas en caja
+  const _pidsInst=new Set(caja.filter(e=>e.tipo==="pagoInstalador"&&e.pagoId).map(e=>e.pagoId));
+  const _pidsMall=new Set(caja.filter(e=>e.tipo==="costoMallaElectro"&&e.pagoId).map(e=>e.pagoId));
+  let _dInst=0,_dMall=0;
+  for(const o of (obras||[])){
+    if(getTipo(o)!=="Todo Costo") continue;
+    const tot=n(o.m2)*getPrecioM2(o,cfg);
+    if(!tot) continue;
+    for(const p of (o.pagosKaston||[])){
+      const pid=p.pagoId||p.id;
+      const ratio=n(p.monto)/tot;
+      if(!_pidsInst.has(pid)) _dInst+=ratio*n(o.m2)*(cfg.precioInstaladorM2||15000);
+      if(!_pidsMall.has(pid)) _dMall+=ratio*Math.ceil(n(o.m2)/M2_ROLLO)*(cfg.costoMallaRolloCompra||262700);
+    }
+  }
+  const bInstTotal=b.pagoInstalador+_dInst;
+  const bMallTotal=b.costoMallaElectro+_dMall;
+
   const BOLSAS_DETALLE=[
-    {k:"matPrima",          l:"Materia Prima",          sub:"Polímero",                                        c:"text-yellow-400",bg:"bg-yellow-900/20",bc:"border-yellow-700/30"},
-    {k:"nomina",            l:"Nómina",                 sub:"Trabajador Itagüí",                               c:"text-orange-400",bg:"bg-orange-900/20",bc:"border-orange-700/30"},
-    {k:"costosFijos",       l:"Costos Fijos",           sub:"Arriendo + Luz",                                  c:"text-red-400",   bg:"bg-red-900/20",   bc:"border-red-700/30"},
-    {k:"pagoInstalador",    l:"Instalador",             sub:`× ${fmt(cfg.precioInstaladorM2||15000)}/m²`,      c:"text-orange-300",bg:"bg-orange-900/10",bc:"border-orange-800/20"},
-    {k:"costoMallaElectro", l:"Malla Electrosoldada",   sub:`× ${fmt(cfg.costoMallaRolloCompra||262700)}/rollo`,c:"text-yellow-300",bg:"bg-yellow-900/10",bc:"border-yellow-800/20"},
+    {k:"matPrima",          l:"Materia Prima",          sub:"Polímero",                                              c:"text-yellow-400",bg:"bg-yellow-900/20",bc:"border-yellow-700/30"},
+    {k:"nomina",            l:"Nómina",                 sub:"Trabajador Itagüí",                                     c:"text-orange-400",bg:"bg-orange-900/20",bc:"border-orange-700/30"},
+    {k:"costosFijos",       l:"Costos Fijos",           sub:"Arriendo + Luz",                                        c:"text-red-400",   bg:"bg-red-900/20",   bc:"border-red-700/30"},
+    {k:"pagoInstalador",    l:"Instalador",             sub:`× ${fmt(cfg.precioInstaladorM2||15000)}/m²`,    val:bInstTotal, c:"text-orange-300",bg:"bg-orange-900/10",bc:"border-orange-800/20"},
+    {k:"costoMallaElectro", l:"Malla Electrosoldada",   sub:`× ${fmt(cfg.costoMallaRolloCompra||262700)}/rollo`,val:bMallTotal, c:"text-yellow-300",bg:"bg-yellow-900/10",bc:"border-yellow-800/20"},
   ];
 
   return(
@@ -1193,11 +1212,11 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
 
       <p className="section-label mb-3">Bolsas Reservadas</p>
       <div className="grid grid-cols-3 gap-2 mb-3">
-        {BOLSAS_DETALLE.map(({k,l,sub,c,bg,bc})=>(
+        {BOLSAS_DETALLE.map(({k,l,sub,c,bg,bc,val})=>(
           <div key={k} className={`rounded-2xl p-3 ${bg} border ${bc}`}>
             <p className="text-[9px] text-gray-400 uppercase leading-tight mb-0.5">{l}</p>
             <p className="text-[9px] text-gray-600 mb-1">{sub}</p>
-            <p className={`text-sm font-black ${c}`}>{fmt(b[k])}</p>
+            <p className={`text-sm font-black ${c}`}>{fmt(val!==undefined?val:b[k])}</p>
           </div>
         ))}
       </div>
