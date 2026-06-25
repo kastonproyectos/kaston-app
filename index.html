@@ -1172,9 +1172,11 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
   const totalDeuda=pendientes.reduce((s,d)=>s+n(d.monto),0);
 
   const BOLSAS_DETALLE=[
-    {k:"matPrima",   l:"Bolsa Materia Prima",  sub:"Polímero",          c:"text-yellow-400",bg:"bg-yellow-900/20",bc:"border-yellow-700/30"},
-    {k:"nomina",     l:"Bolsa Nómina",         sub:"Trabajador Itagüí", c:"text-orange-400",bg:"bg-orange-900/20",bc:"border-orange-700/30"},
-    {k:"costosFijos",l:"Bolsa Costos Fijos",   sub:"Arriendo + Luz",    c:"text-red-400",   bg:"bg-red-900/20",   bc:"border-red-700/30"},
+    {k:"matPrima",          l:"Materia Prima",          sub:"Polímero",                                        c:"text-yellow-400",bg:"bg-yellow-900/20",bc:"border-yellow-700/30"},
+    {k:"nomina",            l:"Nómina",                 sub:"Trabajador Itagüí",                               c:"text-orange-400",bg:"bg-orange-900/20",bc:"border-orange-700/30"},
+    {k:"costosFijos",       l:"Costos Fijos",           sub:"Arriendo + Luz",                                  c:"text-red-400",   bg:"bg-red-900/20",   bc:"border-red-700/30"},
+    {k:"pagoInstalador",    l:"Instalador",             sub:`× ${fmt(cfg.precioInstaladorM2||15000)}/m²`,      c:"text-orange-300",bg:"bg-orange-900/10",bc:"border-orange-800/20"},
+    {k:"costoMallaElectro", l:"Malla Electrosoldada",   sub:`× ${fmt(cfg.costoMallaRolloCompra||262700)}/rollo`,c:"text-yellow-300",bg:"bg-yellow-900/10",bc:"border-yellow-800/20"},
   ];
 
   return(
@@ -1206,24 +1208,6 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
           <p className="text-[10px] text-blue-400 uppercase tracking-widest mb-0.5">Fondo de Crecimiento / Futura Maquinaria</p>
           <p className="text-3xl font-black text-blue-100">{fmt(b.inversion)}</p>
           <p className="text-xs text-blue-800 mt-1">Esta plata no se toca — se acumula con cada venta</p>
-        </div>
-      )}
-      {(b.pagoInstalador>0||b.costoMallaElectro>0)&&(
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          {b.pagoInstalador>0&&(
-            <div className="rounded-2xl p-3 bg-orange-900/20 border border-orange-700/30">
-              <p className="text-[9px] text-gray-400 uppercase leading-tight mb-0.5">Pago Instalador</p>
-              <p className="text-[9px] text-gray-600 mb-1">Mano de obra</p>
-              <p className="text-sm font-black text-orange-300">{fmt(b.pagoInstalador)}</p>
-            </div>
-          )}
-          {b.costoMallaElectro>0&&(
-            <div className="rounded-2xl p-3 bg-yellow-900/20 border border-yellow-700/30">
-              <p className="text-[9px] text-gray-400 uppercase leading-tight mb-0.5">Costo Malla</p>
-              <p className="text-[9px] text-gray-600 mb-1">Electrosoldada</p>
-              <p className="text-sm font-black text-yellow-300">{fmt(b.costoMallaElectro)}</p>
-            </div>
-          )}
         </div>
       )}
 
@@ -1525,29 +1509,6 @@ function ConfigSheet({open,onClose,config,saveConfig,obras,clientes}){
             </div>
           )}
         </div>
-      </div>
-
-      {/* Costos Todo Costo */}
-      <p className="section-label mb-1">Costos instalación (Todo Costo)</p>
-      <p className="text-xs text-gray-500 mb-3">Plata reservada al registrar un pago — no se toca hasta usarla</p>
-      <div className="card rounded-2xl p-4 mb-4">
-        {[
-          {k:"precioInstaladorM2",    l:"Mano de obra instalador",  unit:"por m²",   def:15000},
-          {k:"costoMallaRolloCompra", l:"Costo malla electrosoldada",unit:"por rollo",def:262700},
-        ].map(({k,l,unit,def})=>(
-          <div key={k} className="flex items-center gap-3 mb-3 last:mb-0">
-            <div className="flex-1">
-              <p className="text-sm text-gray-200">{l}</p>
-              <p className="text-[10px] text-gray-600">Default: ${def.toLocaleString("es-CO")} · {unit}</p>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-gray-500 text-xs">$</span>
-              <input type="number" min="0"
-                className="w-24 bg-black/30 rounded-xl px-2 py-1.5 text-white text-sm text-right outline-none focus:ring-1 focus:ring-orange-500"
-                value={cfg[k]===0?"0":(cfg[k]||"")} onChange={e=>setCfg(k,e.target.value)}/>
-            </div>
-          </div>
-        ))}
       </div>
 
       {/* Precios de venta */}
