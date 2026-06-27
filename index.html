@@ -148,28 +148,51 @@ function calcRollos(m2,cfg){
   return {rollos:r,total:r*(cfg.precioMallaRollo||262700)};
 }
 
-// Calcular estado de bolsas desde caja
-function calcBolsas(caja,cfg){
-  const pctInv=cfg?(cfg.pctInversion||0):null;
+// Calcular bolsas dinámicamente desde obras × config actual.
+// Los valores de Ajustes se reflejan en tiempo real sin importar cuándo se registró el pago.
+// Las entradas de caja se siguen usando solo para: mallas cobradas, ingresos manuales y egresos.
+function calcBolsas(obras,caja,cfg){
   const b={matPrima:0,nomina:0,costosFijos:0,inversion:0,disponible:0,pagoInstalador:0,costoMallaElectro:0};
-  for(const e of caja){
+  // 1. Recalcular desde cada pago registrado en obras con los precios actuales
+  for(const o of (obras||[])){
+    const m2=n(o.m2);
+    const tot=m2*getPrecioM2(o,cfg);
+    if(!tot) continue;
+    const esTC=getTipo(o)==="Todo Costo";
+    for(const p of (o.pagosKaston||[])){
+      const monto=n(p.monto);
+      if(!monto) continue;
+      const ratio=monto/tot;
+      const tejas=ratio*m2*TEJAS_M2;
+      const mp =tejas*(cfg.costoMaterial   ||600);
+      const nom=tejas*(cfg.costoTrabajador  ||270);
+      const cf =tejas*((cfg.costoArriendo||70)+(cfg.costoLuz||133));
+      const pi =esTC?ratio*m2*(cfg.precioInstaladorM2||15000):0;
+      const cm =esTC?ratio*Math.ceil(m2/M2_ROLLO)*(cfg.costoMallaRolloCompra||262700):0;
+      const utilNeta=monto-mp-nom-cf-pi-cm;
+      const inv=Math.max(0,utilNeta)*(cfg.pctInversion||0)/100;
+      b.matPrima         +=mp;
+      b.nomina           +=nom;
+      b.costosFijos      +=cf;
+      b.pagoInstalador   +=pi;
+      b.costoMallaElectro+=cm;
+      b.inversion        +=inv;
+      b.disponible       +=utilNeta-inv;
+    }
+  }
+  // 2. Entradas de caja no ligadas a pagos de obras
+  for(const e of (caja||[])){
     const m=n(e.monto);
-    if(e.tipo==="matPrima")        b.matPrima        +=m;
-    if(e.tipo==="nomina")          b.nomina           +=m;
-    if(e.tipo==="costosFijos")     b.costosFijos      +=m;
-    if(e.tipo==="inversion")       {if(pctInv===0)b.disponible+=m;else b.inversion+=m;}
-    if(e.tipo==="utilLibre")       b.disponible       +=m;
-    if(e.tipo==="mallas")          b.disponible       +=m;
-    if(e.tipo==="pagoInstalador")  b.pagoInstalador   +=m;
-    if(e.tipo==="costoMallaElectro")b.costoMallaElectro+=m;
+    if(e.tipo==="mallas")  b.disponible+=m;
+    if(e.tipo==="ingreso") b.disponible+=m;
     if(e.tipo==="gastoManual"){
-      if(e.deBolsa==="nomina")           b.nomina           -=m;
-      if(e.deBolsa==="matPrima")         b.matPrima         -=m;
-      if(e.deBolsa==="costosFijos")      b.costosFijos      -=m;
-      if(e.deBolsa==="inversion")        b.inversion        -=m;
-      if(e.deBolsa==="disponible")       b.disponible       -=m;
-      if(e.deBolsa==="pagoInstalador")   b.pagoInstalador   -=m;
-      if(e.deBolsa==="costoMallaElectro")b.costoMallaElectro-=m;
+      if(e.deBolsa==="matPrima")          b.matPrima         -=m;
+      if(e.deBolsa==="nomina")            b.nomina           -=m;
+      if(e.deBolsa==="costosFijos")       b.costosFijos      -=m;
+      if(e.deBolsa==="pagoInstalador")    b.pagoInstalador   -=m;
+      if(e.deBolsa==="costoMallaElectro") b.costoMallaElectro-=m;
+      if(e.deBolsa==="inversion")         b.inversion        -=m;
+      if(e.deBolsa==="disponible")        b.disponible       -=m;
     }
   }
   return b;
@@ -1078,7 +1101,7 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
   const [f,setF]=useState(blank);
   const upd=k=>e=>setF({...f,[k]:e.target.value});
   const cfg={...DEF_CFG,...config};
-  const b=calcBolsas(caja,cfg);
+  const b=calcBolsas(obras,caja,cfg);
   const esPrestamo=f.deBolsa==="prestamo";
 
   const guardar=()=>{
@@ -1171,33 +1194,12 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
   const recuperadas=(deudas||[]).filter(d=>d.recuperado);
   const totalDeuda=pendientes.reduce((s,d)=>s+n(d.monto),0);
 
-  // Instalador y Malla: combina entradas de caja (pagos nuevos) + cálculo dinámico
-  // para pagos viejos que no tienen esas entradas en caja
-  const _pidsInst=new Set(caja.filter(e=>e.tipo==="pagoInstalador"&&e.pagoId).map(e=>e.pagoId));
-  const _pidsMall=new Set(caja.filter(e=>e.tipo==="costoMallaElectro"&&e.pagoId).map(e=>e.pagoId));
-  let _dInst=0,_dMall=0;
-  for(const o of (obras||[])){
-    if(getTipo(o)!=="Todo Costo") continue;
-    const tot=n(o.m2)*getPrecioM2(o,cfg);
-    if(!tot) continue;
-    for(const p of (o.pagosKaston||[])){
-      const pid=p.pagoId||p.id;
-      const ratio=n(p.monto)/tot;
-      if(!_pidsInst.has(pid)) _dInst+=ratio*n(o.m2)*(cfg.precioInstaladorM2||15000);
-      if(!_pidsMall.has(pid)) _dMall+=ratio*Math.ceil(n(o.m2)/M2_ROLLO)*(cfg.costoMallaRolloCompra||262700);
-    }
-  }
-  const bInstTotal=b.pagoInstalador+_dInst;
-  const bMallTotal=b.costoMallaElectro+_dMall;
-  // Los pagos viejos tienen instalador+malla dentro de disponible — los sacamos
-  const bDisponible=b.disponible-_dInst-_dMall;
-
   const BOLSAS_DETALLE=[
-    {k:"matPrima",          l:"Materia Prima",          sub:"Polímero",                                              c:"text-yellow-400",bg:"bg-yellow-900/20",bc:"border-yellow-700/30"},
-    {k:"nomina",            l:"Nómina",                 sub:"Trabajador Itagüí",                                     c:"text-orange-400",bg:"bg-orange-900/20",bc:"border-orange-700/30"},
-    {k:"costosFijos",       l:"Costos Fijos",           sub:"Arriendo + Luz",                                        c:"text-red-400",   bg:"bg-red-900/20",   bc:"border-red-700/30"},
-    {k:"pagoInstalador",    l:"Instalador",             sub:`× ${fmt(cfg.precioInstaladorM2||15000)}/m²`,    val:bInstTotal, c:"text-orange-300",bg:"bg-orange-900/10",bc:"border-orange-800/20"},
-    {k:"costoMallaElectro", l:"Malla Electrosoldada",   sub:`× ${fmt(cfg.costoMallaRolloCompra||262700)}/rollo`,val:bMallTotal, c:"text-yellow-300",bg:"bg-yellow-900/10",bc:"border-yellow-800/20"},
+    {k:"matPrima",          l:"Materia Prima",          sub:`× ${fmt(cfg.costoMaterial||600)}/teja`,                          c:"text-yellow-400",bg:"bg-yellow-900/20",bc:"border-yellow-700/30"},
+    {k:"nomina",            l:"Nómina",                 sub:`× ${fmt(cfg.costoTrabajador||270)}/teja`,                        c:"text-orange-400",bg:"bg-orange-900/20",bc:"border-orange-700/30"},
+    {k:"costosFijos",       l:"Costos Fijos",           sub:`× ${fmt((cfg.costoArriendo||70)+(cfg.costoLuz||133))}/teja`,     c:"text-red-400",   bg:"bg-red-900/20",   bc:"border-red-700/30"},
+    {k:"pagoInstalador",    l:"Instalador",             sub:`× ${fmt(cfg.precioInstaladorM2||15000)}/m²`,                     c:"text-orange-300",bg:"bg-orange-900/10",bc:"border-orange-800/20"},
+    {k:"costoMallaElectro", l:"Malla Electrosoldada",   sub:`× ${fmt(cfg.costoMallaRolloCompra||262700)}/rollo`,              c:"text-yellow-300",bg:"bg-yellow-900/10",bc:"border-yellow-800/20"},
   ];
 
   return(
@@ -1208,17 +1210,17 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
       <div className="rounded-2xl p-5 mb-4 text-center"
         style={{background:"linear-gradient(135deg,#081a0e,#0d2e16)",border:"1px solid rgba(34,197,94,0.2)"}}>
         <p className="text-xs text-green-400 uppercase tracking-widest mb-1">Balance Disponible</p>
-        <p className={`text-4xl font-black ${bDisponible>=0?"text-green-200":"text-red-400"}`}>{fmt(bDisponible)}</p>
+        <p className={`text-4xl font-black ${b.disponible>=0?"text-green-200":"text-red-400"}`}>{fmt(b.disponible)}</p>
         <p className="text-xs text-green-900 mt-1">Utilidad libre acumulada</p>
       </div>
 
       <p className="section-label mb-3">Bolsas Reservadas</p>
       <div className="grid grid-cols-3 gap-2 mb-3">
-        {BOLSAS_DETALLE.map(({k,l,sub,c,bg,bc,val})=>(
+        {BOLSAS_DETALLE.map(({k,l,sub,c,bg,bc})=>(
           <div key={k} className={`rounded-2xl p-3 ${bg} border ${bc}`}>
             <p className="text-[9px] text-gray-400 uppercase leading-tight mb-0.5">{l}</p>
             <p className="text-[9px] text-gray-600 mb-1">{sub}</p>
-            <p className={`text-sm font-black ${c}`}>{fmt(val!==undefined?val:b[k])}</p>
+            <p className={`text-sm font-black ${c}`}>{fmt(b[k])}</p>
           </div>
         ))}
       </div>
@@ -1465,8 +1467,8 @@ function CajaTab({caja,saveCaja,deudas,saveDeudas,obras,saveObras,config}){
               nomina:     {l:"Bolsa Nómina",          v:b.nomina,      c:"text-orange-400"},
               costosFijos:{l:"Bolsa Costos Fijos",    v:b.costosFijos, c:"text-red-400"},
               inversion:  {l:"Fondo de Crecimiento", v:b.inversion,   c:"text-blue-400"},
-              disponible: {l:"Balance Disponible",    v:bDisponible,  c:"text-green-400"},
-              prestamo:   {l:"Balance Disponible",    v:bDisponible,  c:"text-green-400"},
+              disponible: {l:"Balance Disponible",    v:b.disponible,  c:"text-green-400"},
+              prestamo:   {l:"Balance Disponible",    v:b.disponible,  c:"text-green-400"},
             };
             const s=saldos[f.deBolsa];
             if(!s) return null;
