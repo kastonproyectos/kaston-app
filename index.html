@@ -95,21 +95,8 @@ function useStore(key,def=[]){
 }
 
 // ── Lógica financiera ─────────────────────────────────────────
-// Rutas: A=Reemplazo cubierta, B=Solo suministro estructura, C=Adecuación desde cero
-const RUTAS={
-  A:{label:"Ruta A",desc:"Reemplazo de cubierta",sub:"Barro / Fibrocemento → KASTON",color:"bg-blue-700"},
-  B:{label:"Ruta B",desc:"Solo suministro estructura",sub:"Base ya construida, sin contratistas externos",color:"bg-orange-600"},
-  C:{label:"Ruta C",desc:"Adecuación estructural completa",sub:"Desde cero (ej: zinc). Activa JG + Hermilson",color:"bg-purple-600"},
-};
-const getRuta=o=>o.ruta||"A";
-
-// Determina si se muestran tarjetas de contratistas
-function mostrarContratistas(o){
-  const r=getRuta(o);
-  if(r==="C") return true;
-  if(r==="A"&&o.requiereEstructural) return true;
-  return false; // Ruta B nunca; Ruta A sin switch = nunca
-}
+// Contratistas externos solo en proyectos Todo Costo
+function mostrarContratistas(o){return getTipo(o)==="Todo Costo";}
 
 // Tipo de contrato compatible con versiones anteriores
 function getTipo(o){
@@ -343,7 +330,6 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
 
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <Badge s={o.estado||"Por iniciar"}/>
-        {(()=>{const r=RUTAS[getRuta(o)];return r&&<span className={`text-xs px-2 py-0.5 rounded-full text-white font-semibold ${r.color}`}>{r.label}</span>;})()}
         <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{tipo}</span>
       </div>
 
@@ -600,31 +586,7 @@ function ProyectoDetalle({obraId,obras,saveObras,config,caja,saveCaja,onBack}){
       {/* ══ C — CONTRATISTAS ══════════════════════════ */}
       <p className="section-label mb-2">C — Contratistas</p>
 
-      {/* Ruta B: sin contratistas externos */}
-      {getRuta(o)==="B"&&(
-        <div className="card rounded-2xl p-4 mb-5 flex items-center gap-3">
-          <span className="text-2xl">🏗️</span>
-          <div>
-            <p className="text-sm font-semibold text-gray-200">Sin contratistas externos</p>
-            <p className="text-xs text-gray-500">Ruta B — La base ya está construida. KASTON instala directamente.</p>
-          </div>
-        </div>
-      )}
-
-      {/* Ruta A: switch de excepción estructural */}
-      {getRuta(o)==="A"&&(
-        <div className="card rounded-2xl p-4 mb-3">
-          <Toggle on={o.requiereEstructural||false}
-            onToggle={()=>upd({requiereEstructural:!o.requiereEstructural})}
-            label="¿Requiere arreglos estructurales / quitar peso al techo?"
-            sub="Activa las tarjetas de Juan Guillermo y Hermilson para esta obra"/>
-          {!(o.requiereEstructural)&&(
-            <p className="text-xs text-gray-600 mt-2">Sin arreglos estructurales — Ruta A estándar.</p>
-          )}
-        </div>
-      )}
-
-      {/* Tarjetas de contratistas (Ruta C siempre · Ruta A solo si switch activo) */}
+      {/* Contratistas — solo visible en proyectos Todo Costo */}
       {mostrarContratistas(o)&&(
         <>
           {[
@@ -831,14 +793,14 @@ function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
   const [obraId,setObraId]=useState(null);
   const [sh,setSh]=useState(false);
   const [pendingDel,setPendingDel]=useState(null); // id de obra en espera de confirmación
-  const blank={nombre:"",cliente:"",direccion:"",m2:"",ruta:"A",tipoContrato:"Únicamente La Teja",estado:"Por iniciar",notas:""};
+  const blank={nombre:"",cliente:"",direccion:"",m2:"",tipoContrato:"Únicamente La Teja",estado:"Por iniciar",notas:""};
   const [f,setF]=useState(blank);
   const upd=k=>e=>setF({...f,[k]:e.target.value});
   const cfg={...DEF_CFG,...config};
 
   const openForm=o=>{
     setF(o?{id:o.id,nombre:o.nombre||"",cliente:o.cliente||"",direccion:o.direccion||"",
-      m2:o.m2||"",ruta:getRuta(o),tipoContrato:getTipo(o),estado:o.estado||"Por iniciar",notas:o.notas||""}:blank);
+      m2:o.m2||"",tipoContrato:getTipo(o),estado:o.estado||"Por iniciar",notas:o.notas||""}:blank);
     setSh(true);
   };
 
@@ -846,7 +808,6 @@ function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
     if(!f.nombre.trim()) return;
     if(f.id) saveObras(obras.map(o=>o.id===f.id?{...o,...f}:o));
     else saveObras([{...f,id:uid(),fecha:hoy(),
-      requiereEstructural:false,
       suministrarMallas:false,listaCompras:[],mallasRegistradas:false,
       favorActivo:false,fondoFavores:"",listaFavores:[],
       pagoJG:"",pagoHerm:"",comJGRecibida:false,comHermRecibida:false,
@@ -932,7 +893,6 @@ function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
                 </div>
               )}
               <div className="mt-2 flex gap-2 items-center flex-wrap">
-                {(()=>{const rt=RUTAS[getRuta(o)];return rt&&<span className={`text-[10px] px-1.5 py-0.5 rounded-full text-white ${rt.color}`}>{rt.label}</span>;})()}
                 <span className="text-[10px] text-gray-600">{getTipo(o)}</span>
                 {n(o.m2)>0&&<span className="text-[10px] text-gray-600">· {o.m2} m²</span>}
                 {r.comPend&&<span className="text-[10px] text-orange-400">⚠ Comisión pendiente</span>}
@@ -954,24 +914,7 @@ function ProyectosTab({obras,saveObras,clientes,config,caja,saveCaja}){
         <Inp label="Dirección" value={f.direccion} onChange={upd("direccion")} placeholder="Dirección de la obra"/>
         <Inp label="Metros cuadrados (m²)" type="number" value={f.m2} onChange={upd("m2")} placeholder="0"/>
 
-        {/* Selector de Ruta */}
-        <div className="mb-4">
-          <label className="block text-xs text-gray-400 mb-2">Ruta del proyecto</label>
-          <div className="flex flex-col gap-2">
-            {Object.entries(RUTAS).map(([k,r])=>(
-              <button key={k} onClick={()=>setF({...f,ruta:k})}
-                className={`w-full py-3 px-4 rounded-xl text-left border-2 transition ${f.ruta===k?"border-orange-400 bg-orange-600/10":"border-gray-700 bg-gray-800/50"}`}>
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full text-white font-bold ${r.color}`}>{r.label}</span>
-                  <span className={`text-sm font-semibold ${f.ruta===k?"text-orange-300":"text-gray-300"}`}>{r.desc}</span>
-                </div>
-                <p className="text-xs text-gray-500">{r.sub}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Tipo de contrato — siempre visible */}
+        {/* Tipo de contrato */}
         <div className="mb-4">
           <label className="block text-xs text-gray-400 mb-2">Tipo de contrato</label>
           <div className="flex gap-2">
